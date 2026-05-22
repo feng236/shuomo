@@ -1,0 +1,51 @@
+﻿name,value,source
+alk_mw_36,10.0,default
+alk_om_yuan_per_kwh,0.1,attachment5
+conv_peak_mw,6.0,default
+dt_h,1.0,default
+feedin_yuan_per_kwh,0.3779,attachment8
+nh3_capex_yuan_per_kgH2_per_h,60000.0,attachment6
+nh3_life_year,30.0,attachment6
+nh3_mw_36,0.75,default
+nh3_om_yuan_per_kwh,0.002,attachment6
+nh3_rate_tph_36,1.5,default
+pem_mw_36,10.0,default
+pem_om_yuan_per_kwh,0.15,attachment5
+pv_cap_mw,64.0,default
+pv_lcoe_yuan_per_kwh,0.12,attachment5
+storage_capex_yuan_per_kwh,1000.0,attachment6
+storage_eta_ch,0.9,attachment6
+storage_eta_dis,0.9,attachment6
+storage_life_year,15.0,attachment6
+storage_om_yuan_per_kwh,0.01,attachment6
+storage_self_loss_per_h,0.002,attachment6
+wind_cap_mw,40.0,default
+wind_lcoe_yuan_per_kwh,0.15,attachment5
+tou_price_h00,0.3424,attachment7
+tou_price_h01,0.3424,attachment7
+tou_price_h02,0.3424,attachment7
+tou_price_h03,0.3424,attachment7
+tou_price_h04,0.3424,attachment7
+tou_price_h05,0.3424,attachment7
+tou_price_h06,0.3424,attachment7
+tou_price_h07,0.6074,attachment7
+tou_price_h08,0.6074,attachment7
+tou_price_h09,0.6074,attachment7
+tou_price_h10,0.8024,attachment7
+tou_price_h11,0.8024,attachment7
+tou_price_h12,0.8024,attachment7
+tou_price_h13,0.8024,attachment7
+tou_price_h14,0.8024,attachment7
+tou_price_h15,0.6074,attachment7
+tou_price_h16,0.6074,attachment7
+tou_price_h17,0.6074,attachment7
+tou_price_h18,0.8024,attachment7
+tou_price_h19,0.8024,attachment7
+tou_price_h20,0.8024,attachment7
+tou_price_h21,0.6074,attachment7
+tou_price_h22,0.6074,attachment7
+tou_price_h23,0.3424,attachment7
+attachment5,D:\qq file\A题\A题\附件5：风光发电与制氢设备技术参数.xlsx,parameter_source_file
+attachment6,D:\qq file\A题\A题\附件6：储能设备和合成氨装置技术参数.xlsx,parameter_source_file
+attachment7,D:\qq file\A题\A题\附件7：分时电价表.xlsx,parameter_source_file
+attachment8,D:\qq file\A题\A题\附件8：风电、光伏余电上网电价.xlsx,parameter_source_file
