@@ -43,12 +43,14 @@ hardSoft = [hard_soft_compare(q2, "discrete"); hard_soft_compare(q3, "continuous
 q2Annual = annual_summary_for_candidates(q2);
 q3Annual = annual_summary_for_candidates(q3);
 q4NoStorage = q4_no_storage_rows(data, scenarios, params);
-[q4Scan, q4WithStorage, q4StorageAnnual, q4GridVs] = q4_derived_tables(q4NoStorage, q3, params);
+[q4Scan, q4WithStorage, q4StorageAnnual, q4GridVs, q4StorageHourly, q4StorageDesigns] = q4_derived_tables(data, scenarios, q4NoStorage, q3, params);
+q4MinCapacity = q4_min_capacity_rows(data, params);
+stochasticRows = stochastic_representative_rows(data, scenarios, params);
 storage2d = storage_2d_scan_rows(q4Scan);
 storageMarginal = storage_marginal_value_rows(q4Scan);
 storageTrace = storage_trace_report_rows(q4WithStorage);
 topsisCandidates = topsis_candidates_rows(q2Annual, q3Annual, q4StorageAnnual, q4GridVs);
-acceptance = acceptance_report(q1Hourly, q2, q3);
+acceptance = acceptance_report(q1Hourly, q2, q3, q4WithStorage, q4StorageHourly, stochasticRows);
 
 write_metric_table(fullfile(tablesDir, "q1_metrics.csv"), q1Metrics);
 writetable(q1Hourly, fullfile(tablesDir, "q1_hourly_balance.csv"));
@@ -63,16 +65,21 @@ writetable(hardSoft, fullfile(tablesDir, "hard_soft_compare.csv"));
 writetable(q4NoStorage, fullfile(tablesDir, "q4_offgrid_no_storage.csv"));
 writetable(q4Scan, fullfile(tablesDir, "q4_storage_capacity_scan.csv"));
 writetable(q4WithStorage, fullfile(tablesDir, "q4_offgrid_with_storage.csv"));
+writetable(q4StorageHourly, fullfile(tablesDir, "q4_storage_hourly_dispatch.csv"));
 writetable(q4StorageAnnual, fullfile(tablesDir, "q4_storage_annual_summary.csv"));
+writetable(q4StorageDesigns, fullfile(tablesDir, "q4_storage_design_recommendations.csv"));
+writetable(q4MinCapacity, fullfile(tablesDir, "q4_minimum_capacity.csv"));
 writetable(q4GridVs, fullfile(tablesDir, "q4_grid_vs_offgrid.csv"));
 writetable(q4GridVs, fullfile(tablesDir, "grid_support_value.csv"));
+writetable(stochasticRows, fullfile(tablesDir, "stochastic_representative_scenarios.csv"));
 writetable(storage2d, fullfile(tablesDir, "storage_2d_scan.csv"));
 writetable(storageMarginal, fullfile(tablesDir, "storage_marginal_value.csv"));
 writetable(storageTrace, fullfile(tablesDir, "storage_trace_report.csv"));
 writetable(topsisCandidates, fullfile(tablesDir, "topsis_candidates.csv"));
 writetable(acceptance, fullfile(tablesDir, "acceptance_report.csv"));
 
-plot_results(q1Hourly, q2, q3, policyMargin, flexValue, storage2d, storageMarginal, q4GridVs, topsisCandidates, figuresDir);
+plot_results(q1Hourly, q2, q3, policyMargin, flexValue, storage2d, storageMarginal, q4GridVs, topsisCandidates, figuresDir, ...
+    q4NoStorage, q4WithStorage, q4StorageHourly, q4MinCapacity, stochasticRows);
 fprintf("Saved MATLAB outputs to %s\n", outDir);
 end
 

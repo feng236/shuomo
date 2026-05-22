@@ -24,7 +24,11 @@ for i = 1:height(q3Annual)
 end
 if height(q4StorageAnnual) > 0
     schemes(end + 1, 1) = "offgrid_storage";
-    unitCost(end + 1, 1) = q4StorageAnnual.annual_storage_cost(1) / max(q4StorageAnnual.annual_NH3_t(1), 1e-9);
+    if ismember("annual_average_unit_cost", string(q4StorageAnnual.Properties.VariableNames))
+        unitCost(end + 1, 1) = q4StorageAnnual.annual_average_unit_cost(1);
+    else
+        unitCost(end + 1, 1) = q4StorageAnnual.annual_storage_cost(1) / max(q4StorageAnnual.annual_NH3_t(1), 1e-9);
+    end
     fullPassDays(end + 1, 1) = 0.0;
     annualNH3(end + 1, 1) = q4StorageAnnual.annual_NH3_t(1);
     storageProxy(end + 1, 1) = q4StorageAnnual.E_cap_MWh(1);

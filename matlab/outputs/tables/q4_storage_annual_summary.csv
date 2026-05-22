@@ -1,2 +1,2 @@
-E_cap_MWh,annual_days,annual_NH3_t,annual_storage_cost
-10,360,10013.4723903614,657534.246575342
+E_cap_MWh,P_cap_MW,design_scenario_id,annual_days,annual_NH3_t,annual_total_cost,annual_storage_cost,mean_delta_NH3_t,mean_curtail_reduction_MWh,annual_average_unit_cost
+10,2.5,W4P1,360,9916.55739759036,40567421.6036773,665225.383629089,0.375,5.16587556618759,4090.8775068992

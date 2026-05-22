@@ -5,3 +5,10 @@ q3_rows,OK,120,120
 q1_power_balance,OK,0.0,<1e-6
 metering_E_self_identity,OK,0.0,E_self=E_re-E_sell-E_curtail
 metering_R_green_formula,OK,0.0,R_green=E_self/E_load
+q4_storage_rows,OK,24,24
+q4_storage_hourly_rows,OK,576,576
+q4_storage_power_balance,OK,7.105427357601002e-15,<1e-6
+q4_storage_nonzero_capacity,OK,True,True
+q4_storage_improves_NH3,OK,True,True
+stochastic_representative_rows,OK,8,8
+stochastic_probability_sum,OK,1.0,1.0

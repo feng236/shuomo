@@ -308,12 +308,13 @@ def flexible_load_value_rows(compare_rows):
 
 def storage_2d_scan_rows(base_scan_rows):
     rows = []
-    p_caps = [0.5, 1.0, 2.0]
+    p_caps = [0.125, 0.25, 0.5]
     for r in base_scan_rows:
         e_cap = float(r["E_cap_MWh"])
         for ratio in p_caps:
             p_cap = e_cap * ratio
-            utilization_factor = min(1.0, ratio)
+            base_p_cap = float(r.get("P_cap_MW", 0.0))
+            utilization_factor = min(1.0, p_cap / base_p_cap) if base_p_cap > 0 else 1.0
             storage_daily_cost = float(r["storage_daily_cost"]) * (1.0 + 0.03 * max(ratio - 1.0, 0.0))
             daily_nh3 = float(r["daily_NH3_t"]) * utilization_factor if e_cap > 0 else float(r["daily_NH3_t"])
             rows.append({
@@ -358,7 +359,7 @@ def topsis_candidates_rows(q2_annual, q3_annual, q4_storage_annual, q4_grid_vs):
         s = q4_storage_annual[0]
         rows.append({
             "scheme": "offgrid_storage",
-            "unit_cost": s["annual_storage_cost"] / max(s["annual_NH3_t"], 1e-9),
+            "unit_cost": s.get("annual_average_unit_cost", s["annual_storage_cost"] / max(s["annual_NH3_t"], 1e-9)),
             "full_pass_days": 0,
             "annual_NH3": s["annual_NH3_t"],
             "storage_investment_proxy": s["E_cap_MWh"],
@@ -401,9 +402,10 @@ def hard_soft_compare_rows(rows):
 def q4_no_storage_rows(data, scenarios):
     rows = []
     p_per_rate = process_power_for_rate(1.0)
+    p_min = process_power_for_rate(0.3)
     for sc in scenarios:
         residual = sc["renew_mw"] - data.base_load_mw
-        rate = np.clip(residual / p_per_rate, 0, 3.0)
+        rate = np.where(residual >= p_min, np.minimum(residual / p_per_rate, 3.0), 0.0)
         proc = p_per_rate * rate
         curtail = np.maximum(sc["renew_mw"] - data.base_load_mw - proc, 0)
         unserved = np.maximum(data.base_load_mw - sc["renew_mw"], 0)
@@ -488,6 +490,11 @@ def create_figures(
     compare_rows,
     q4_rows,
     scan_rows,
+    q4_storage_rows,
+    q4_storage_hourly,
+    q4_grid_vs,
+    q4_min_capacity,
+    stochastic_rows,
     policy_margin,
     storage_2d,
     topsis_candidates,
@@ -520,10 +527,12 @@ def create_figures(
     _fig_q4_heatmap(figures_dir / "q4_no_storage_production_heatmap.png", q4_rows, "daily_NH3_t")
     _fig_q4_heatmap(figures_dir / "q4_no_storage_curtailment_heatmap.png", q4_rows, "curtail_MWh")
     _fig_scan(figures_dir / "q4_storage_capacity_scan.png", scan_rows)
-    _fig_placeholder(figures_dir / "q4_storage_soc_max_curtailment.png", "Storage SOC profile reserved for detailed MILP storage dispatch")
-    _fig_placeholder(figures_dir / "q4_storage_improvement_bar.png", "Storage improvement summary")
-    _fig_grid_compare(figures_dir / "q4_grid_vs_offgrid_unit_cost.png", q3_rows, q4_rows)
-    _fig_placeholder(figures_dir / "q4_grid_support_value.png", "Grid support value = off-grid unit cost - grid-connected unit cost")
+    _fig_storage_soc(figures_dir / "q4_storage_soc_max_curtailment.png", q4_storage_hourly)
+    _fig_storage_improvement(figures_dir / "q4_storage_improvement_bar.png", q4_rows, q4_storage_rows)
+    _fig_grid_cost_scatter(figures_dir / "q4_grid_vs_offgrid_unit_cost.png", q4_grid_vs)
+    _fig_grid_support_value(figures_dir / "q4_grid_support_value.png", q4_grid_vs)
+    _fig_min_capacity(figures_dir / "q4_minimum_capacity.png", q4_min_capacity)
+    _fig_stochastic(figures_dir / "stochastic_representative_scenarios.png", stochastic_rows)
 
 
 def figure_index_rows():
@@ -548,6 +557,8 @@ def figure_index_rows():
         "q4_storage_improvement_bar.png",
         "q4_grid_vs_offgrid_unit_cost.png",
         "q4_grid_support_value.png",
+        "q4_minimum_capacity.png",
+        "stochastic_representative_scenarios.png",
         "fig_01_typical_power_balance.png",
         "fig_02_discrete_schedule_heatmap.png",
         "fig_03_continuous_schedule_heatmap.png",
@@ -563,7 +574,10 @@ def figure_index_rows():
     return [{"figure_file": f"outputs/figures/{name}", "paper_use": name.replace(".png", "")} for name in names]
 
 
-def acceptance_report(q1_rows, q2_rows, q3_rows):
+def acceptance_report(q1_rows, q2_rows, q3_rows, q4_storage_rows=None, q4_storage_hourly=None, stochastic_rows=None):
+    q4_storage_rows = q4_storage_rows or []
+    q4_storage_hourly = q4_storage_hourly or []
+    stochastic_rows = stochastic_rows or []
     q2_ok = len(q2_rows) == 120
     q3_ok = len(q3_rows) == 120
     max_q1_balance = max(abs(float(r["balance_residual_MW"])) for r in q1_rows)
@@ -577,6 +591,10 @@ def acceptance_report(q1_rows, q2_rows, q3_rows):
         for r in rows_for_metric
         if float(r["E_load"]) > 0
     )
+    max_q4_balance = max((abs(float(r["balance_residual_MW"])) for r in q4_storage_hourly), default=0.0)
+    storage_has_capacity = any(float(r.get("E_cap_MWh", 0.0)) > 0 for r in q4_storage_rows)
+    storage_improves = any(float(r.get("delta_NH3_t", 0.0)) > 1e-6 for r in q4_storage_rows)
+    stochastic_prob_sum = sum(float(r.get("probability", 0.0)) for r in stochastic_rows)
     return [
         {"check": "q1_hourly_rows", "status": "OK" if len(q1_rows) == 24 else "FAIL", "value": len(q1_rows), "expected": 24},
         {"check": "q2_rows", "status": "OK" if q2_ok else "FAIL", "value": len(q2_rows), "expected": 120},
@@ -584,6 +602,13 @@ def acceptance_report(q1_rows, q2_rows, q3_rows):
         {"check": "q1_power_balance", "status": "OK" if max_q1_balance < 1e-6 else "FAIL", "value": max_q1_balance, "expected": "<1e-6"},
         {"check": "metering_E_self_identity", "status": "OK" if max_self_identity_gap < 1e-6 else "FAIL", "value": max_self_identity_gap, "expected": "E_self=E_re-E_sell-E_curtail"},
         {"check": "metering_R_green_formula", "status": "OK" if max_green_ratio_gap < 1e-9 else "FAIL", "value": max_green_ratio_gap, "expected": "R_green=E_self/E_load"},
+        {"check": "q4_storage_rows", "status": "OK" if len(q4_storage_rows) == 24 else "FAIL", "value": len(q4_storage_rows), "expected": 24},
+        {"check": "q4_storage_hourly_rows", "status": "OK" if len(q4_storage_hourly) == 576 else "FAIL", "value": len(q4_storage_hourly), "expected": 576},
+        {"check": "q4_storage_power_balance", "status": "OK" if max_q4_balance < 1e-6 else "FAIL", "value": max_q4_balance, "expected": "<1e-6"},
+        {"check": "q4_storage_nonzero_capacity", "status": "OK" if storage_has_capacity else "FAIL", "value": storage_has_capacity, "expected": True},
+        {"check": "q4_storage_improves_NH3", "status": "OK" if storage_improves else "FAIL", "value": storage_improves, "expected": True},
+        {"check": "stochastic_representative_rows", "status": "OK" if len(stochastic_rows) == 8 else "FAIL", "value": len(stochastic_rows), "expected": 8},
+        {"check": "stochastic_probability_sum", "status": "OK" if abs(stochastic_prob_sum - 1.0) < 1e-9 else "FAIL", "value": stochastic_prob_sum, "expected": 1.0},
     ]
 
 
@@ -864,6 +889,117 @@ def _fig_scan(path, rows):
     plt.xlabel("Storage capacity (MWh)")
     plt.ylabel("Storage unit cost (yuan/t)")
     _savefig(path)
+
+
+def _fig_storage_soc(path, rows):
+    if not rows:
+        _fig_placeholder(path, "No storage dispatch rows")
+        return
+    scenario_ids = sorted(set(r["scenario_id"] for r in rows))
+    scenario = max(
+        scenario_ids,
+        key=lambda sid: max(float(r["SOC_MWh"]) for r in rows if r["scenario_id"] == sid),
+    )
+    subset = sorted([r for r in rows if r["scenario_id"] == scenario], key=lambda r: int(r["hour"]))
+    h = [int(r["hour"]) for r in subset]
+    plt.figure(figsize=(9, 4.8))
+    plt.plot(h, [float(r["SOC_MWh"]) for r in subset], marker="o", label="SOC (MWh)")
+    plt.bar(h, [float(r["P_charge_MW"]) for r in subset], alpha=0.35, label="Charge (MW)")
+    plt.bar(h, [-float(r["P_discharge_MW"]) for r in subset], alpha=0.35, label="Discharge (MW)")
+    plt.plot(h, [float(r["P_curtail_MW"]) for r in subset], linestyle="--", label="Curtailment (MW)")
+    plt.xlabel("Hour")
+    plt.ylabel("Power / energy")
+    plt.title(f"Storage dispatch in {scenario}")
+    plt.legend()
+    _savefig(path)
+
+
+def _fig_storage_improvement(path, base_rows, storage_rows):
+    base_by_id = {r["scenario_id"]: r for r in base_rows}
+    rows = sorted(storage_rows, key=lambda r: float(r.get("delta_NH3_t", 0.0)), reverse=True)[:8]
+    if not rows:
+        _fig_placeholder(path, "No storage improvement rows")
+        return
+    labels = [r["scenario_id"] for r in rows]
+    delta_nh3 = [float(r["daily_NH3_t"]) - float(base_by_id[r["scenario_id"]]["daily_NH3_t"]) for r in rows]
+    curtail_drop = [float(base_by_id[r["scenario_id"]]["curtail_MWh"]) - float(r["curtail_MWh"]) for r in rows]
+    x = np.arange(len(labels))
+    plt.figure(figsize=(9, 4.8))
+    plt.bar(x - 0.18, delta_nh3, width=0.36, label="NH3 gain (t/d)")
+    plt.bar(x + 0.18, curtail_drop, width=0.36, label="Curtailment reduction (MWh)")
+    plt.xticks(x, labels)
+    plt.ylabel("Improvement")
+    plt.legend()
+    _savefig(path)
+
+
+def _fig_grid_cost_scatter(path, rows):
+    if not rows:
+        _fig_placeholder(path, "No grid comparison rows")
+        return
+    plt.figure(figsize=(6.5, 5))
+    x = [float(r["grid_connected_unit_cost"]) for r in rows]
+    y = [float(r["offgrid_unit_cost"]) for r in rows]
+    plt.scatter(x, y, s=35, alpha=0.8)
+    lo = min(x + y)
+    hi = max(x + y)
+    plt.plot([lo, hi], [lo, hi], color="#64748B", linestyle="--", label="Parity")
+    plt.xlabel("Grid-connected unit cost (yuan/t)")
+    plt.ylabel("Off-grid unit cost (yuan/t)")
+    plt.legend()
+    _savefig(path)
+
+
+def _fig_grid_support_value(path, rows):
+    if not rows:
+        _fig_placeholder(path, "No grid support value rows")
+        return
+    ordered = sorted(rows, key=lambda r: float(r["grid_support_value"]), reverse=True)
+    labels = [r["scenario_id"] for r in ordered]
+    vals = [float(r["grid_support_value"]) for r in ordered]
+    plt.figure(figsize=(9, 4.8))
+    colors = ["#EF4444" if v > 0 else "#22C55E" for v in vals]
+    plt.bar(labels, vals, color=colors)
+    plt.axhline(0, color="#111827", linewidth=0.8)
+    plt.xticks(rotation=45, ha="right")
+    plt.ylabel("Off-grid minus grid cost (yuan/t)")
+    _savefig(path)
+
+
+def _fig_min_capacity(path, rows):
+    if not rows:
+        _fig_placeholder(path, "No capacity rows")
+        return
+    labels = [r["method"].replace("_", "\n") for r in rows]
+    wind = [float(r["wind_MW"]) for r in rows]
+    pv = [float(r["pv_MW"]) for r in rows]
+    x = np.arange(len(rows))
+    plt.figure(figsize=(7, 4.8))
+    plt.bar(x, wind, label="Wind MW")
+    plt.bar(x, pv, bottom=wind, label="PV MW")
+    plt.xticks(x, labels)
+    plt.ylabel("Required capacity (MW)")
+    plt.legend()
+    _savefig(path)
+
+
+def _fig_stochastic(path, rows):
+    if not rows:
+        _fig_placeholder(path, "No stochastic scenario rows")
+        return
+    ordered = sorted(rows, key=lambda r: int(r["cluster_id"]))
+    labels = [f"C{r['cluster_id']}" for r in ordered]
+    probs = [float(r["probability"]) for r in ordered]
+    costs = [float(r["unit_cost"]) for r in ordered]
+    fig, ax1 = plt.subplots(figsize=(8, 4.8))
+    ax1.bar(labels, probs, color="#3B82F6", alpha=0.65, label="Probability")
+    ax1.set_ylabel("Probability")
+    ax2 = ax1.twinx()
+    ax2.plot(labels, costs, color="#EF4444", marker="o", label="Unit cost")
+    ax2.set_ylabel("Unit cost (yuan/t)")
+    fig.tight_layout()
+    plt.savefig(path, dpi=180)
+    plt.close()
 
 
 def _fig_placeholder(path, title):

@@ -1,4 +1,10 @@
-function plot_results(q1Hourly, q2, q3, policyMargin, flexValue, storage2d, storageMarginal, q4GridVs, topsisCandidates, figuresDir)
+function plot_results(q1Hourly, q2, q3, policyMargin, flexValue, storage2d, storageMarginal, q4GridVs, topsisCandidates, figuresDir, ...
+    q4NoStorage, q4WithStorage, q4StorageHourly, q4MinCapacity, stochasticRows)
+if nargin < 11, q4NoStorage = table(); end
+if nargin < 12, q4WithStorage = table(); end
+if nargin < 13, q4StorageHourly = table(); end
+if nargin < 14, q4MinCapacity = table(); end
+if nargin < 15, stochasticRows = table(); end
 if ~exist(figuresDir, "dir"), mkdir(figuresDir); end
 
 fig = figure("Visible", "off");
@@ -122,4 +128,82 @@ if height(topsisCandidates) > 0
 end
 saveas(fig, fullfile(figuresDir, "fig_11_topsis_radar.png"));
 close(fig);
+
+if height(q4StorageHourly) > 0
+    fig = figure("Visible", "off");
+    scen = q4StorageHourly.scenario_id(1);
+    if ismember("SOC_MWh", string(q4StorageHourly.Properties.VariableNames))
+        scenList = unique(q4StorageHourly.scenario_id);
+        maxSoc = zeros(numel(scenList), 1);
+        for i = 1:numel(scenList)
+            maxSoc(i) = max(q4StorageHourly.SOC_MWh(q4StorageHourly.scenario_id == scenList(i)));
+        end
+        [~, idx] = max(maxSoc);
+        scen = scenList(idx);
+    end
+    sub = q4StorageHourly(q4StorageHourly.scenario_id == scen, :);
+    plot(sub.hour, sub.SOC_MWh, "-o"); hold on;
+    bar(sub.hour, sub.P_charge_MW, FaceAlpha=0.25);
+    bar(sub.hour, -sub.P_discharge_MW, FaceAlpha=0.25);
+    plot(sub.hour, sub.P_curtail_MW, "--");
+    xlabel("Hour"); ylabel("Power / energy"); title("Storage SOC and dispatch");
+    legend(["SOC","Charge","Discharge","Curtailment"], Location="best");
+    saveas(fig, fullfile(figuresDir, "q4_storage_soc_max_curtailment.png"));
+    close(fig);
+end
+
+if height(q4NoStorage) > 0 && height(q4WithStorage) > 0
+    fig = figure("Visible", "off");
+    joined = innerjoin(q4NoStorage, q4WithStorage, Keys="scenario_id");
+    [~, order] = sort(joined.delta_NH3_t, "descend");
+    order = order(1:min(8, numel(order)));
+    labels = joined.scenario_id(order);
+    gain = joined.delta_NH3_t(order);
+    curtailDrop = joined.curtail_reduction_MWh(order);
+    bar(categorical(labels), [gain, curtailDrop]);
+    ylabel("Improvement"); title("Storage improvement");
+    legend(["NH3 gain (t/d)","Curtailment reduction (MWh)"], Location="best");
+    saveas(fig, fullfile(figuresDir, "q4_storage_improvement_bar.png"));
+    close(fig);
+end
+
+if height(q4GridVs) > 0
+    fig = figure("Visible", "off");
+    scatter(q4GridVs.grid_connected_unit_cost, q4GridVs.offgrid_unit_cost, 30, "filled"); hold on;
+    lims = [min([q4GridVs.grid_connected_unit_cost; q4GridVs.offgrid_unit_cost]), max([q4GridVs.grid_connected_unit_cost; q4GridVs.offgrid_unit_cost])];
+    plot(lims, lims, "--");
+    xlabel("Grid-connected unit cost (yuan/t)"); ylabel("Off-grid unit cost (yuan/t)");
+    title("Grid vs off-grid cost");
+    saveas(fig, fullfile(figuresDir, "q4_grid_vs_offgrid_unit_cost.png"));
+    close(fig);
+
+    fig = figure("Visible", "off");
+    bar(categorical(q4GridVs.scenario_id), q4GridVs.grid_support_value);
+    yline(0);
+    ylabel("Off-grid minus grid cost (yuan/t)"); title("Grid support value");
+    saveas(fig, fullfile(figuresDir, "q4_grid_support_value.png"));
+    close(fig);
+end
+
+if height(q4MinCapacity) > 0
+    fig = figure("Visible", "off");
+    bar(categorical(q4MinCapacity.method), [q4MinCapacity.wind_MW, q4MinCapacity.pv_MW], "stacked");
+    ylabel("Required capacity (MW)"); title("Minimum off-grid renewable capacity");
+    legend(["Wind","PV"], Location="best");
+    saveas(fig, fullfile(figuresDir, "q4_minimum_capacity.png"));
+    close(fig);
+end
+
+if height(stochasticRows) > 0
+    fig = figure("Visible", "off");
+    yyaxis left;
+    bar(categorical("C" + string(stochasticRows.cluster_id)), stochasticRows.probability);
+    ylabel("Probability");
+    yyaxis right;
+    plot(categorical("C" + string(stochasticRows.cluster_id)), stochasticRows.unit_cost, "-o");
+    ylabel("Unit cost (yuan/t)");
+    title("Representative stochastic scenarios");
+    saveas(fig, fullfile(figuresDir, "stochastic_representative_scenarios.png"));
+    close(fig);
+end
 end

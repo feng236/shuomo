@@ -1,5 +1,5 @@
 function rows = storage_2d_scan_rows(baseScanRows)
-pRatios = [0.5, 1.0, 2.0];
+pRatios = [0.125, 0.25, 0.5];
 outRows = cell(height(baseScanRows) * numel(pRatios), 1);
 k = 0;
 for i = 1:height(baseScanRows)
@@ -8,7 +8,11 @@ for i = 1:height(baseScanRows)
     for j = 1:numel(pRatios)
         ratio = pRatios(j);
         pCap = eCap * ratio;
-        utilization = min(1.0, ratio);
+        if ismember("P_cap_MW", string(baseScanRows.Properties.VariableNames)) && base.P_cap_MW > 0
+            utilization = min(1.0, pCap / base.P_cap_MW);
+        else
+            utilization = min(1.0, ratio);
+        end
         dailyCost = base.storage_daily_cost * (1.0 + 0.03 * max(ratio - 1.0, 0.0));
         if eCap > 0
             dailyNH3 = base.daily_NH3_t * utilization;

@@ -1,0 +1,3 @@
+method,wind_MW,pv_MW,total_MW,scale_vs_current,note
+LP_min_total_wind_pv_capacity,1156.30563002681,60.8581910540427,1217.16382108085,11.7034982796236,minimize wind_MW + pv_MW while meeting base load plus full 72 t/d process load in all 24 scenarios
+fixed_wind_pv_ratio_scale,1156.30563002681,1850.0890080429,3006.39463806971,28.9076407506702,keep 40:64 wind/PV ratio and scale until all hours and scenarios are self-sufficient
