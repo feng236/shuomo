@@ -40,19 +40,39 @@ policyMargin = [policy_margin_rows(q2, "discrete"); policy_margin_rows(q3, "cont
 riskSummary = [scenario_risk_summary(q2, "discrete"); scenario_risk_summary(q3, "continuous")];
 flexValue = flexible_load_value(q2, q3);
 hardSoft = [hard_soft_compare(q2, "discrete"); hard_soft_compare(q3, "continuous")];
+q2Annual = annual_summary_for_candidates(q2);
+q3Annual = annual_summary_for_candidates(q3);
+q4NoStorage = q4_no_storage_rows(data, scenarios, params);
+[q4Scan, q4WithStorage, q4StorageAnnual, q4GridVs] = q4_derived_tables(q4NoStorage, q3, params);
+storage2d = storage_2d_scan_rows(q4Scan);
+storageMarginal = storage_marginal_value_rows(q4Scan);
+storageTrace = storage_trace_report_rows(q4WithStorage);
+topsisCandidates = topsis_candidates_rows(q2Annual, q3Annual, q4StorageAnnual, q4GridVs);
 acceptance = acceptance_report(q1Hourly, q2, q3);
 
 write_metric_table(fullfile(tablesDir, "q1_metrics.csv"), q1Metrics);
 writetable(q1Hourly, fullfile(tablesDir, "q1_hourly_balance.csv"));
 writetable(q2, fullfile(tablesDir, "q2_discrete_scenarios.csv"));
 writetable(q3, fullfile(tablesDir, "q3_continuous_scenarios.csv"));
+writetable(q2Annual, fullfile(tablesDir, "q2_annual_summary.csv"));
+writetable(q3Annual, fullfile(tablesDir, "q3_annual_summary.csv"));
 writetable(policyMargin, fullfile(tablesDir, "policy_margin_heatmap.csv"));
 writetable(riskSummary, fullfile(tablesDir, "scenario_risk_summary.csv"));
 writetable(flexValue, fullfile(tablesDir, "flexible_load_value.csv"));
 writetable(hardSoft, fullfile(tablesDir, "hard_soft_compare.csv"));
+writetable(q4NoStorage, fullfile(tablesDir, "q4_offgrid_no_storage.csv"));
+writetable(q4Scan, fullfile(tablesDir, "q4_storage_capacity_scan.csv"));
+writetable(q4WithStorage, fullfile(tablesDir, "q4_offgrid_with_storage.csv"));
+writetable(q4StorageAnnual, fullfile(tablesDir, "q4_storage_annual_summary.csv"));
+writetable(q4GridVs, fullfile(tablesDir, "q4_grid_vs_offgrid.csv"));
+writetable(q4GridVs, fullfile(tablesDir, "grid_support_value.csv"));
+writetable(storage2d, fullfile(tablesDir, "storage_2d_scan.csv"));
+writetable(storageMarginal, fullfile(tablesDir, "storage_marginal_value.csv"));
+writetable(storageTrace, fullfile(tablesDir, "storage_trace_report.csv"));
+writetable(topsisCandidates, fullfile(tablesDir, "topsis_candidates.csv"));
 writetable(acceptance, fullfile(tablesDir, "acceptance_report.csv"));
 
-plot_results(q1Hourly, q3, policyMargin, figuresDir);
+plot_results(q1Hourly, q2, q3, policyMargin, flexValue, storage2d, storageMarginal, q4GridVs, topsisCandidates, figuresDir);
 fprintf("Saved MATLAB outputs to %s\n", outDir);
 end
 
@@ -71,6 +91,12 @@ params.alk_om_yuan_per_kwh = 0.10;
 params.pem_om_yuan_per_kwh = 0.15;
 params.nh3_om_yuan_per_kwh = 0.002;
 params.feedin_yuan_per_kwh = 0.3779;
+params.storage_capex_yuan_per_kwh = 1000.0;
+params.storage_om_yuan_per_kwh = 0.01;
+params.storage_life_year = 15.0;
+params.storage_eta_ch = 0.90;
+params.storage_eta_dis = 0.90;
+params.storage_self_loss_per_h = 0.002;
 params.tou_price = tou_price();
 end
 

@@ -3,7 +3,7 @@
 本仓库面向数学建模竞赛 A 题，按语言划分为两个专区：
 
 - `python/`：完整计算主线，包含数据读取、MILP/LP 调度、绿电直连指标、储能扫描、风险统计、Pareto/TOPSIS 推荐、论文图表输出。
-- `matlab/`：MATLAB 复现与交叉校验版本，使用同一指标口径，便于论文附件、答辩和无 Python 环境时运行。
+- `matlab/`：MATLAB 完整实现版本，使用同一指标口径，可独立生成创新表格、创新图件和验收报告，便于同学在 MATLAB 环境直接运行。
 
 ## 指标口径
 
@@ -53,7 +53,7 @@ cd("D:/shumo/green_direct_e_h2_nh3_model_pack_v2/matlab")
 main("D:/qq file/A题/A题", "outputs")
 ```
 
-MATLAB 版输出位于 `matlab/outputs/tables` 和 `matlab/outputs/figures`。
+MATLAB 版输出位于 `matlab/outputs/tables` 和 `matlab/outputs/figures`，覆盖政策裕度、风险统计、柔性负荷价值、离网储能、储能 E/P 扫描、绿电溯源、联网/离网支撑价值和 TOPSIS 推荐。
 
 ## 创新输出对应关系
 
