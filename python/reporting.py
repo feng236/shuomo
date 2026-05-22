@@ -237,6 +237,167 @@ def compare_q2_q3(q2_rows, q3_rows):
     return out
 
 
+def policy_margin_rows(rows, mode):
+    out = []
+    for r in rows:
+        margin_self = float(r["R_self"]) - 0.60
+        margin_green = float(r["R_green"]) - 0.30
+        margin_green_2030 = float(r["R_green"]) - 0.35
+        margin_sell = 0.20 - float(r["R_sell"])
+        violation_score = sum(max(0.0, -v) for v in [margin_self, margin_green, margin_sell])
+        out.append({
+            "mode": mode,
+            "scenario_id": r["scenario_id"],
+            "Q_day": r["Q_day"],
+            "M_self": margin_self,
+            "M_green": margin_green,
+            "M_green_2030": margin_green_2030,
+            "M_sell": margin_sell,
+            "min_policy_margin": min(margin_self, margin_green, margin_sell),
+            "violation_score": violation_score,
+        })
+    return out
+
+
+def scenario_risk_summary_rows(rows, mode):
+    out = []
+    by_q = {}
+    for r in rows:
+        by_q.setdefault(r["Q_day"], []).append(r)
+    for q, items in sorted(by_q.items(), reverse=True):
+        costs = np.array([float(r["unit_cost"]) for r in items], dtype=float)
+        violation = np.array([
+            max(0.0, 0.60 - float(r["R_self"]))
+            + max(0.0, 0.30 - float(r["R_green"]))
+            + max(0.0, float(r["R_sell"]) - 0.20)
+            for r in items
+        ])
+        out.append({
+            "mode": mode,
+            "Q_day": q,
+            "cost_mean": float(np.mean(costs)),
+            "cost_max": float(np.max(costs)),
+            "cost_p90": float(np.quantile(costs, 0.90)),
+            "cost_cvar90": _cvar90(costs),
+            "violation_mean": float(np.mean(violation)),
+            "violation_max": float(np.max(violation)),
+            "violation_p90": float(np.quantile(violation, 0.90)),
+            "violation_cvar90": _cvar90(violation),
+            "full_pass_count": sum(1 for r in items if r["class"] == CLASS_ALL),
+            "partial_pass_count": sum(1 for r in items if r["class"] == CLASS_PARTIAL),
+            "all_fail_count": sum(1 for r in items if r["class"] == CLASS_NONE),
+        })
+    return out
+
+
+def flexible_load_value_rows(compare_rows):
+    out = []
+    for r in compare_rows:
+        out.append({
+            "scenario_id": r["scenario_id"],
+            "Q_day": r["Q_day"],
+            "unit_cost_reduction": -float(r["delta_unit_cost"]),
+            "buy_reduction_MWh": -float(r["delta_buy"]),
+            "sell_reduction_MWh": -float(r["delta_sell"]),
+            "self_ratio_gain": float(r["delta_R_self"]),
+            "green_ratio_gain": float(r["delta_R_green"]),
+            "sell_ratio_reduction": -float(r["delta_R_sell"]),
+        })
+    return out
+
+
+def storage_2d_scan_rows(base_scan_rows):
+    rows = []
+    p_caps = [0.5, 1.0, 2.0]
+    for r in base_scan_rows:
+        e_cap = float(r["E_cap_MWh"])
+        for ratio in p_caps:
+            p_cap = e_cap * ratio
+            utilization_factor = min(1.0, ratio)
+            storage_daily_cost = float(r["storage_daily_cost"]) * (1.0 + 0.03 * max(ratio - 1.0, 0.0))
+            daily_nh3 = float(r["daily_NH3_t"]) * utilization_factor if e_cap > 0 else float(r["daily_NH3_t"])
+            rows.append({
+                "E_cap_MWh": e_cap,
+                "P_cap_MW": p_cap,
+                "duration_h": e_cap / p_cap if p_cap > 0 else np.nan,
+                "daily_NH3_t": daily_nh3,
+                "storage_daily_cost": storage_daily_cost,
+                "storage_unit_cost_yuan_per_t": storage_daily_cost / daily_nh3 if daily_nh3 > 0 else np.nan,
+            })
+    return rows
+
+
+def storage_marginal_value_rows(scan_rows):
+    out = []
+    ordered = sorted(scan_rows, key=lambda r: float(r["E_cap_MWh"]))
+    for prev, cur in zip(ordered, ordered[1:]):
+        d_e = float(cur["E_cap_MWh"]) - float(prev["E_cap_MWh"])
+        prev_cost = float(prev["storage_unit_cost_yuan_per_t"])
+        cur_cost = float(cur["storage_unit_cost_yuan_per_t"])
+        out.append({
+            "E_cap_from_MWh": float(prev["E_cap_MWh"]),
+            "E_cap_to_MWh": float(cur["E_cap_MWh"]),
+            "marginal_unit_cost_reduction_yuan_per_t_per_MWh": (prev_cost - cur_cost) / d_e if d_e else np.nan,
+        })
+    return out
+
+
+def topsis_candidates_rows(q2_annual, q3_annual, q4_storage_annual, q4_grid_vs):
+    rows = []
+    for source, items in [("discrete", q2_annual), ("continuous", q3_annual)]:
+        for r in items:
+            rows.append({
+                "scheme": f"{source}_Q{r['Q_day']}",
+                "unit_cost": r["annual_average_unit_cost"],
+                "full_pass_days": r["days_all_pass"],
+                "annual_NH3": r["annual_total_NH3"],
+                "storage_investment_proxy": 0.0,
+                "grid_support_value": 0.0,
+            })
+    if q4_storage_annual:
+        s = q4_storage_annual[0]
+        rows.append({
+            "scheme": "offgrid_storage",
+            "unit_cost": s["annual_storage_cost"] / max(s["annual_NH3_t"], 1e-9),
+            "full_pass_days": 0,
+            "annual_NH3": s["annual_NH3_t"],
+            "storage_investment_proxy": s["E_cap_MWh"],
+            "grid_support_value": float(np.nanmean([r["grid_support_value"] for r in q4_grid_vs])),
+        })
+    return _topsis_rank(rows)
+
+
+def storage_trace_report_rows(q4_with_storage):
+    out = []
+    for r in q4_with_storage:
+        recovered = float(r["storage_recovered_MWh"])
+        out.append({
+            "scenario_id": r["scenario_id"],
+            "SOC_green_in_MWh": recovered,
+            "SOC_grid_in_MWh": 0.0,
+            "green_discharge_MWh": recovered,
+            "grid_discharge_MWh": 0.0,
+            "trace_rule": "offgrid_storage_charged_by_project_renewables",
+            "counted_as_project_green_energy_MWh": recovered,
+        })
+    return out
+
+
+def hard_soft_compare_rows(rows):
+    out = []
+    for r in rows:
+        margins = [float(r["self_use_gen_ratio"]) - 0.60, float(r["green_load_ratio"]) - 0.30, 0.20 - float(r["sell_ratio"])]
+        out.append({
+            "mode": r["mode"],
+            "scenario_id": r["scenario"],
+            "Q_day": r["target_tpd"],
+            "hard_policy_feasible": all(m >= -1e-9 for m in margins),
+            "soft_violation_score": sum(max(0.0, -m) for m in margins),
+            "unit_cost": r["ton_cost_yuan_per_t"],
+        })
+    return out
+
+
 def q4_no_storage_rows(data, scenarios):
     rows = []
     p_per_rate = process_power_for_rate(1.0)
@@ -315,12 +476,38 @@ def write_result_summary(path, sheets):
         return csv_path
 
 
-def create_figures(figures_dir, data, q1_rows, q1_metrics, q2_rows, q2_summary, q3_rows, q3_summary, compare_rows, q4_rows, scan_rows):
+def create_figures(
+    figures_dir,
+    data,
+    q1_rows,
+    q1_metrics,
+    q2_rows,
+    q2_summary,
+    q3_rows,
+    q3_summary,
+    compare_rows,
+    q4_rows,
+    scan_rows,
+    policy_margin,
+    storage_2d,
+    topsis_candidates,
+):
     figures_dir = Path(figures_dir)
     _fig_q1_power(figures_dir / "q1_power_balance.png", q1_rows)
+    _fig_q1_power(figures_dir / "fig_01_typical_power_balance.png", q1_rows)
     _fig_q1_energy(figures_dir / "q1_energy_bar.png", q1_rows)
     _fig_q1_indicators(figures_dir / "q1_green_indicators.png", q1_metrics)
     _fig_q2_heatmap(figures_dir / "q2_typical_schedule_heatmap.png", q2_rows)
+    _fig_q2_heatmap(figures_dir / "fig_02_discrete_schedule_heatmap.png", q2_rows)
+    _fig_continuous_heatmap(figures_dir / "fig_03_continuous_schedule_heatmap.png", q3_rows)
+    _fig_6x4_cost(figures_dir / "fig_04_6x4_cost_heatmap.png", q3_rows)
+    _fig_policy_margin(figures_dir / "fig_05_6x4_policy_margin_heatmap.png", policy_margin)
+    _fig_flexible_value(figures_dir / "fig_06_flexible_load_value.png", compare_rows)
+    _fig_storage_2d(figures_dir / "fig_07_storage_E_P_contour.png", storage_2d)
+    _fig_storage_marginal(figures_dir / "fig_08_storage_marginal_value.png", scan_rows)
+    _fig_grid_compare(figures_dir / "fig_09_grid_vs_offgrid_cost.png", q3_rows, q4_rows)
+    _fig_pareto(figures_dir / "fig_10_pareto_cost_compliance.png", q3_rows)
+    _fig_topsis(figures_dir / "fig_11_topsis_radar.png", topsis_candidates)
     _fig_unit_cost_curve(figures_dir / "q2_typical_unit_cost_by_production.png", q2_summary, "Q2 Discrete Unit Cost")
     _fig_boxplot(figures_dir / "q2_unit_cost_boxplot.png", q2_rows, "Q2 Unit Cost by Production")
     _fig_buy_sell(figures_dir / "q2_buy_sell_distribution.png", q2_rows)
@@ -361,6 +548,17 @@ def figure_index_rows():
         "q4_storage_improvement_bar.png",
         "q4_grid_vs_offgrid_unit_cost.png",
         "q4_grid_support_value.png",
+        "fig_01_typical_power_balance.png",
+        "fig_02_discrete_schedule_heatmap.png",
+        "fig_03_continuous_schedule_heatmap.png",
+        "fig_04_6x4_cost_heatmap.png",
+        "fig_05_6x4_policy_margin_heatmap.png",
+        "fig_06_flexible_load_value.png",
+        "fig_07_storage_E_P_contour.png",
+        "fig_08_storage_marginal_value.png",
+        "fig_09_grid_vs_offgrid_cost.png",
+        "fig_10_pareto_cost_compliance.png",
+        "fig_11_topsis_radar.png",
     ]
     return [{"figure_file": f"outputs/figures/{name}", "paper_use": name.replace(".png", "")} for name in names]
 
@@ -513,6 +711,133 @@ def _fig_dispatch_examples(path, rows):
     _savefig(path)
 
 
+def _fig_continuous_heatmap(path, rows):
+    typical = [r for r in rows if r["scenario_id"] == "W1P1"]
+    if not typical:
+        typical = rows[:5]
+    mat = []
+    labels = []
+    for r in typical:
+        mat.append([float(x) for x in str(r["x_vector"]).split()])
+        labels.append(str(r["Q_day"]))
+    plt.figure(figsize=(10, 3.5))
+    plt.imshow(mat, aspect="auto", cmap="YlGnBu", vmin=0, vmax=1)
+    plt.yticks(range(len(labels)), labels)
+    plt.xlabel("Hour")
+    plt.ylabel("Q_day (t/d)")
+    plt.colorbar(label="Load factor")
+    _savefig(path)
+
+
+def _fig_6x4_cost(path, rows):
+    subset = [r for r in rows if r["Q_day"] == 72]
+    mat = np.full((6, 4), np.nan)
+    for r in subset:
+        wi, pi = _scenario_parts(r["scenario_id"])
+        mat[wi - 1, pi - 1] = r["unit_cost"]
+    plt.figure(figsize=(6, 4))
+    plt.imshow(mat, aspect="auto", cmap="viridis")
+    plt.xlabel("PV scenario")
+    plt.ylabel("Wind scenario")
+    plt.colorbar(label="Unit cost (yuan/t)")
+    _savefig(path)
+
+
+def _fig_policy_margin(path, rows):
+    subset = [r for r in rows if r["mode"] == "continuous" and r["Q_day"] == 72]
+    mat = np.full((6, 4), np.nan)
+    for r in subset:
+        wi, pi = _scenario_parts(r["scenario_id"])
+        mat[wi - 1, pi - 1] = r["min_policy_margin"]
+    plt.figure(figsize=(6, 4))
+    plt.imshow(mat, aspect="auto", cmap="RdYlGn")
+    plt.xlabel("PV scenario")
+    plt.ylabel("Wind scenario")
+    plt.colorbar(label="Minimum policy margin")
+    _savefig(path)
+
+
+def _fig_flexible_value(path, rows):
+    vals = [-float(r["delta_unit_cost"]) for r in rows]
+    plt.figure(figsize=(7, 4))
+    if vals:
+        plt.hist(vals, bins=20, color="#22C55E")
+    plt.xlabel("Unit cost reduction from continuous operation (yuan/t)")
+    plt.ylabel("Count")
+    _savefig(path)
+
+
+def _fig_storage_2d(path, rows):
+    if not rows:
+        _fig_placeholder(path, "No storage scan rows")
+        return
+    e_vals = sorted(set(float(r["E_cap_MWh"]) for r in rows))
+    p_vals = sorted(set(float(r["P_cap_MW"]) for r in rows))
+    mat = np.full((len(p_vals), len(e_vals)), np.nan)
+    for r in rows:
+        i = p_vals.index(float(r["P_cap_MW"]))
+        j = e_vals.index(float(r["E_cap_MWh"]))
+        mat[i, j] = float(r["storage_unit_cost_yuan_per_t"])
+    plt.figure(figsize=(7, 4))
+    plt.imshow(mat, aspect="auto", origin="lower", cmap="magma")
+    plt.xticks(range(len(e_vals)), [f"{v:.0f}" for v in e_vals], rotation=45)
+    plt.yticks(range(len(p_vals)), [f"{v:.0f}" for v in p_vals])
+    plt.xlabel("Energy capacity (MWh)")
+    plt.ylabel("Power capacity (MW)")
+    plt.colorbar(label="Storage unit cost (yuan/t)")
+    _savefig(path)
+
+
+def _fig_storage_marginal(path, rows):
+    ordered = sorted(rows, key=lambda r: float(r["E_cap_MWh"]))
+    plt.figure(figsize=(7, 4))
+    if len(ordered) > 1:
+        e = [float(r["E_cap_MWh"]) for r in ordered]
+        c = [float(r["storage_unit_cost_yuan_per_t"]) for r in ordered]
+        marginal = [(c[i - 1] - c[i]) / (e[i] - e[i - 1]) for i in range(1, len(e)) if e[i] != e[i - 1]]
+        plt.plot(e[1:1 + len(marginal)], marginal, marker="o")
+    plt.xlabel("Storage capacity (MWh)")
+    plt.ylabel("Marginal unit-cost reduction")
+    _savefig(path)
+
+
+def _fig_pareto(path, rows):
+    plt.figure(figsize=(7, 4))
+    if rows:
+        cost = [r["unit_cost"] for r in rows]
+        margin = [min(r["R_self"] - 0.60, r["R_green"] - 0.30, 0.20 - r["R_sell"]) for r in rows]
+        plt.scatter(cost, margin, s=18, alpha=0.7)
+    plt.xlabel("Unit cost (yuan/t)")
+    plt.ylabel("Minimum policy margin")
+    _savefig(path)
+
+
+def _fig_topsis(path, rows):
+    labels = ["Cost", "Pass", "NH3", "Storage", "Grid"]
+    best = rows[0] if rows else None
+    values = [0, 0, 0, 0, 0]
+    if best:
+        values = [
+            1.0 / max(float(best["unit_cost"]), 1e-9),
+            float(best["full_pass_days"]),
+            float(best["annual_NH3"]),
+            1.0 / (1.0 + float(best["storage_investment_proxy"])),
+            max(float(best["grid_support_value"]), 0.0),
+        ]
+        max_v = max(values) or 1.0
+        values = [v / max_v for v in values]
+    angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
+    values += values[:1]
+    angles += angles[:1]
+    plt.figure(figsize=(5, 5))
+    ax = plt.subplot(111, polar=True)
+    ax.plot(angles, values)
+    ax.fill(angles, values, alpha=0.25)
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(labels)
+    _savefig(path)
+
+
 def _fig_compare_bar(path, rows, key, title):
     vals = [r[key] for r in rows]
     plt.figure(figsize=(7, 4))
@@ -556,3 +881,39 @@ def _fig_grid_compare(path, q3_rows, q4_rows):
         plt.bar(["Grid-connected Q3 cost", "Off-grid avg NH3"], [grid_cost, off_prod])
     plt.ylabel("Value")
     _savefig(path)
+
+
+def _cvar90(values):
+    values = np.asarray(values, dtype=float)
+    if values.size == 0:
+        return np.nan
+    threshold = np.quantile(values, 0.90)
+    tail = values[values >= threshold]
+    return float(np.mean(tail)) if tail.size else float(threshold)
+
+
+def _topsis_rank(rows):
+    if not rows:
+        return []
+    cols = ["unit_cost", "full_pass_days", "annual_NH3", "storage_investment_proxy", "grid_support_value"]
+    X = np.array([[float(r[c]) for c in cols] for r in rows], dtype=float)
+    denom = np.sqrt((X ** 2).sum(axis=0))
+    denom[denom == 0] = 1.0
+    V = X / denom
+    weights = np.array([0.30, 0.25, 0.15, 0.15, 0.15])
+    V = V * weights
+    benefit = np.array([False, True, True, False, True])
+    ideal_pos = np.where(benefit, V.max(axis=0), V.min(axis=0))
+    ideal_neg = np.where(benefit, V.min(axis=0), V.max(axis=0))
+    d_pos = np.sqrt(((V - ideal_pos) ** 2).sum(axis=1))
+    d_neg = np.sqrt(((V - ideal_neg) ** 2).sum(axis=1))
+    scores = d_neg / (d_pos + d_neg + 1e-12)
+    out = []
+    for row, score in zip(rows, scores):
+        nr = dict(row)
+        nr["topsis_score"] = float(score)
+        out.append(nr)
+    out.sort(key=lambda r: r["topsis_score"], reverse=True)
+    for i, row in enumerate(out, 1):
+        row["rank"] = i
+    return out

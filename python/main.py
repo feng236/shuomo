@@ -24,12 +24,20 @@ from reporting import (
     create_figures,
     ensure_output_dirs,
     figure_index_rows,
+    flexible_load_value_rows,
+    hard_soft_compare_rows,
     q1_hourly_balance_rows,
     q2_all_scenarios,
     q3_all_scenarios,
     q4_no_storage_rows,
     q4_storage_capacity_scan,
     q5_policy_table,
+    policy_margin_rows,
+    scenario_risk_summary_rows,
+    storage_2d_scan_rows,
+    storage_marginal_value_rows,
+    storage_trace_report_rows,
+    topsis_candidates_rows,
     validate_inputs,
     write_csv,
     write_result_summary,
@@ -299,6 +307,14 @@ def run(data_dir, out_dir):
     q3_vs_q2 = compare_q2_q3(q2_rows, q3_rows)
     q4_no_storage = q4_no_storage_rows(data, scenarios)
     q4_scan, q4_with_storage, q4_storage_annual, q4_grid_vs = q4_derived_tables(q4_no_storage, q3_rows)
+    policy_margin = policy_margin_rows(q2_rows, "discrete") + policy_margin_rows(q3_rows, "continuous")
+    scenario_risk = scenario_risk_summary_rows(q2_rows, "discrete") + scenario_risk_summary_rows(q3_rows, "continuous")
+    flexible_value = flexible_load_value_rows(q3_vs_q2)
+    storage_2d = storage_2d_scan_rows(q4_scan)
+    storage_marginal = storage_marginal_value_rows(q4_scan)
+    storage_trace = storage_trace_report_rows(q4_with_storage)
+    topsis_candidates = topsis_candidates_rows(q2_annual, q3_annual, q4_storage_annual, q4_grid_vs)
+    hard_soft = hard_soft_compare_rows(rows)
 
     table_files = {
         "input_parameters_v2.csv": input_parameter_rows(data),
@@ -317,6 +333,15 @@ def run(data_dir, out_dir):
         "q4_offgrid_with_storage.csv": q4_with_storage,
         "q4_storage_annual_summary.csv": q4_storage_annual,
         "q4_grid_vs_offgrid.csv": q4_grid_vs,
+        "grid_support_value.csv": q4_grid_vs,
+        "policy_margin_heatmap.csv": policy_margin,
+        "scenario_risk_summary.csv": scenario_risk,
+        "flexible_load_value.csv": flexible_value,
+        "storage_2d_scan.csv": storage_2d,
+        "storage_marginal_value.csv": storage_marginal,
+        "storage_trace_report.csv": storage_trace,
+        "topsis_candidates.csv": topsis_candidates,
+        "hard_soft_compare.csv": hard_soft,
         "figure_index.csv": figure_index_rows(),
         "acceptance_report.csv": acceptance_report(q1_hourly, q2_rows, q3_rows),
         "pareto_topsis_recommendations_v2_metering.csv": recommendation_rows(rows),
@@ -345,12 +370,35 @@ def run(data_dir, out_dir):
             "q4_no_storage": q4_no_storage,
             "q4_storage": q4_with_storage,
             "q4_grid_vs_offgrid": q4_grid_vs,
+            "policy_margin": policy_margin,
+            "scenario_risk": scenario_risk,
+            "flexible_value": flexible_value,
+            "storage_2d_scan": storage_2d,
+            "storage_marginal": storage_marginal,
+            "storage_trace": storage_trace,
+            "topsis_candidates": topsis_candidates,
+            "hard_soft": hard_soft,
             "figure_index": figure_index_rows(),
         },
     )
     print(f"Saved {summary_path}")
 
-    create_figures(figures, data, q1_hourly, q1_metric_rows, q2_rows, q2_annual, q3_rows, q3_annual, q3_vs_q2, q4_no_storage, q4_scan)
+    create_figures(
+        figures,
+        data,
+        q1_hourly,
+        q1_metric_rows,
+        q2_rows,
+        q2_annual,
+        q3_rows,
+        q3_annual,
+        q3_vs_q2,
+        q4_no_storage,
+        q4_scan,
+        policy_margin,
+        storage_2d,
+        topsis_candidates,
+    )
 
 
 def _legacy_q1(q1_rows):
