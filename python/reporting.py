@@ -9,18 +9,224 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib import font_manager
 
 from config import CFG, TOU_PRICE
 from costs import process_power_for_rate, storage_capex_daily
 from metrics import CLASS_ALL, CLASS_NONE, CLASS_PARTIAL
 
 
+FIELD_CN = {
+    "item": "检查项",
+    "check": "验收项",
+    "status": "状态",
+    "value": "实际值",
+    "expected": "期望值",
+    "note": "备注",
+    "name": "参数名",
+    "source": "数据来源",
+    "hour": "时刻",
+    "time_label": "时间",
+    "mode": "运行模式",
+    "method": "方法",
+    "scenario": "场景编号",
+    "scenario_id": "场景编号",
+    "wind_scenario": "风电场景",
+    "pv_scenario": "光伏场景",
+    "target_tpd": "目标日产氨量(吨)",
+    "Q": "日产氨量(吨)",
+    "Q_day": "日产氨量(吨)",
+    "H_on": "运行小时数",
+    "total_cost": "日总成本(元)",
+    "total_cost_yuan": "日总成本(元)",
+    "incremental_total_cost": "日增量成本(元)",
+    "incremental_total_cost_yuan": "日增量成本(元)",
+    "unit_cost": "吨氨成本(元/吨)",
+    "ton_cost_yuan_per_t": "吨氨成本(元/吨)",
+    "incremental_unit_cost": "增量吨氨成本(元/吨)",
+    "incremental_ton_cost_yuan_per_t": "增量吨氨成本(元/吨)",
+    "baseline_grid_cost": "常规负荷基准电费(元)",
+    "nh3_capex_daily": "合成氨装置日折旧(元)",
+    "annual_days": "折算年天数",
+    "annual_total_NH3": "全年合成氨产量(吨)",
+    "annual_NH3_t": "全年合成氨产量(吨)",
+    "annual_total_cost": "全年总成本(元)",
+    "annual_incremental_total_cost": "全年增量成本(元)",
+    "annual_storage_cost": "全年储能成本(元)",
+    "annual_average_unit_cost": "全年平均吨氨成本(元/吨)",
+    "annual_average_incremental_unit_cost": "全年平均增量吨氨成本(元/吨)",
+    "days_all_pass": "全满足天数",
+    "days_partial_pass": "部分满足天数",
+    "days_all_fail": "全不满足天数",
+    "best_or_not": "是否推荐",
+    "class": "合格情况",
+    "class_metering": "合格情况",
+    "qualification_metering": "计量口径合格情况",
+    "pass_self": "自发自用率达标",
+    "pass_green": "绿电占比达标",
+    "pass_green_2030": "2030绿电占比达标",
+    "pass_sell": "上网比例达标",
+    "P_base_MW": "常规负荷(MW)",
+    "P_alk_MW": "碱性电解槽功率(MW)",
+    "P_pem_MW": "PEM电解槽功率(MW)",
+    "P_nh3_MW": "合成氨功率(MW)",
+    "P_eha_MW": "电氢氨负荷(MW)",
+    "P_load_total_MW": "总负荷(MW)",
+    "P_wind_MW": "风电出力(MW)",
+    "P_pv_MW": "光伏出力(MW)",
+    "P_re_MW": "新能源出力(MW)",
+    "P_buy_MW": "网购功率(MW)",
+    "P_sell_MW": "上网功率(MW)",
+    "P_charge_MW": "储能充电功率(MW)",
+    "P_discharge_MW": "储能放电功率(MW)",
+    "P_process_MW": "制氨负荷功率(MW)",
+    "P_curtail_MW": "弃电功率(MW)",
+    "P_unserved_MW": "未满足功率(MW)",
+    "tou_price_yuan_per_kWh": "分时电价(元/kWh)",
+    "balance_residual_MW": "功率平衡残差(MW)",
+    "buy_sell_product": "购售电互斥检查",
+    "E_load": "总用电量(MWh)",
+    "E_load_MWh": "总用电量(MWh)",
+    "E_re": "新能源发电量(MWh)",
+    "E_RE_MWh": "新能源发电量(MWh)",
+    "E_buy": "网购电量(MWh)",
+    "E_buy_MWh": "网购电量(MWh)",
+    "E_sell": "上网电量(MWh)",
+    "E_sell_MWh": "上网电量(MWh)",
+    "E_curtail": "弃电量(MWh)",
+    "E_curtail_MWh": "弃电量(MWh)",
+    "E_self": "自用新能源电量(MWh)",
+    "E_self_MWh": "自用新能源电量(MWh)",
+    "E_self_use_MWh": "自用新能源电量(MWh)",
+    "R_self": "自发自用率",
+    "self_use_gen_ratio": "自发自用率",
+    "R_green": "绿电用电比例",
+    "green_load_ratio": "绿电用电比例",
+    "R_sell": "上网比例",
+    "sell_ratio": "上网比例",
+    "statement_R_self": "题面公式自用率",
+    "statement_self_use_ratio": "题面公式自用率",
+    "M_self": "自发自用率裕度",
+    "M_green": "绿电比例裕度",
+    "M_green_2030": "2030绿电比例裕度",
+    "M_sell": "上网比例裕度",
+    "min_policy_margin": "最小政策裕度",
+    "violation_score": "违规程度",
+    "u_t": "开停机状态",
+    "on_hours": "开机时段",
+    "x_vector": "负荷率序列",
+    "rate_vector": "产氨速率序列(吨/小时)",
+    "buy_vector": "网购功率序列(MW)",
+    "sell_vector": "上网功率序列(MW)",
+    "curtail_vector": "弃电序列(MWh)",
+    "unserved_vector": "未满足序列(MWh)",
+    "rate_tph": "产氨速率(吨/小时)",
+    "daily_NH3_t": "日合成氨产量(吨)",
+    "avg_rate_tph": "平均产氨速率(吨/小时)",
+    "curtail_MWh": "弃电量(MWh)",
+    "unserved_base_MWh": "未满足负荷电量(MWh)",
+    "max_curtail_MW": "最大弃电功率(MW)",
+    "max_unserved_base_MW": "最大未满足功率(MW)",
+    "E_cap_MWh": "储能容量(MWh)",
+    "P_cap_MW": "储能功率(MW)",
+    "duration_h": "储能时长(小时)",
+    "design_scenario_id": "设计场景",
+    "delta_NH3_t": "产量提升(吨/日)",
+    "curtail_reduction_MWh": "弃电减少量(MWh)",
+    "storage_charge_MWh": "储能充电量(MWh)",
+    "storage_discharge_MWh": "储能放电量(MWh)",
+    "storage_recovered_MWh": "储能回收电量(MWh)",
+    "max_SOC_MWh": "最大荷电量(MWh)",
+    "SOC_MWh": "荷电量(MWh)",
+    "storage_daily_cost": "储能日成本(元)",
+    "storage_unit_cost_yuan_per_t": "储能单位成本(元/吨)",
+    "incremental_storage_cost_yuan_per_added_t": "新增吨氨储能成本(元/吨)",
+    "daily_total_cost": "日总成本(元)",
+    "offgrid_unit_cost": "离网吨氨成本(元/吨)",
+    "offgrid_daily_NH3_t": "离网日合成氨产量(吨)",
+    "grid_connected_unit_cost": "联网吨氨成本(元/吨)",
+    "grid_support_value": "电网支撑价值(元/吨)",
+    "hard_policy_feasible": "硬约束可行",
+    "soft_violation_score": "软约束违规度",
+    "unit_cost_reduction": "吨氨成本下降(元/吨)",
+    "buy_reduction_MWh": "网购电量减少(MWh)",
+    "sell_reduction_MWh": "上网电量减少(MWh)",
+    "self_ratio_gain": "自发自用率提升",
+    "green_ratio_gain": "绿电比例提升",
+    "sell_ratio_reduction": "上网比例下降",
+    "cost_mean": "成本均值(元/吨)",
+    "cost_max": "成本最大值(元/吨)",
+    "cost_p90": "成本90分位(元/吨)",
+    "cost_cvar90": "成本CVaR90(元/吨)",
+    "violation_mean": "违规度均值",
+    "violation_max": "违规度最大值",
+    "violation_p90": "违规度90分位",
+    "violation_cvar90": "违规度CVaR90",
+    "full_pass_count": "全满足场景数",
+    "partial_pass_count": "部分满足场景数",
+    "all_fail_count": "全不满足场景数",
+    "cluster_id": "代表场景编号",
+    "probability": "概率",
+    "expected_days": "折算天数",
+    "wind_mean_pu": "平均风电标幺",
+    "pv_mean_pu": "平均光伏标幺",
+    "scheme": "方案",
+    "full_pass_days": "全满足天数",
+    "annual_NH3": "全年合成氨产量(吨)",
+    "storage_investment_proxy": "储能投资代理变量",
+    "topsis_score": "TOPSIS得分",
+    "rank": "排序",
+    "recommendation_type": "推荐类型",
+    "interpretation": "解释",
+    "figure_file": "图片文件",
+    "paper_use": "论文用途",
+}
+
+VALUE_CN = {
+    "discrete": "离散开停机",
+    "continuous": "连续调节",
+    "best_cost": "成本最优",
+    "economic_min_incremental_cost": "经济型最低边际成本",
+    "max_daily_NH3": "最大日产量",
+    "max_curtailment_reduction": "最大弃电削减",
+    "smallest_capacity_for_90pct_curtailment_reduction": "90%弃电削减最小容量",
+    "lowest marginal storage cost per added ton of ammonia; use as the cost-first design": "新增吨氨储能成本最低，适合作为成本优先方案",
+    "highest off-grid ammonia output in the scanned storage range": "扫描范围内离网日产氨量最高",
+    "largest renewable curtailment reduction in the scanned storage range": "扫描范围内弃电削减量最大",
+    "smallest storage capacity that captures at least 90% of the maximum achievable curtailment reduction": "达到最大可削减弃电量90%所需的最小储能容量",
+    "OK": "通过",
+    "FAIL": "未通过",
+}
+
+
+def _setup_chinese_font():
+    candidates = [
+        r"C:\Windows\Fonts\NotoSansSC-VF.ttf",
+        r"C:\Windows\Fonts\msyh.ttc",
+        r"C:\Windows\Fonts\simhei.ttf",
+        r"C:\Windows\Fonts\simsun.ttc",
+    ]
+    for font_path in candidates:
+        path = Path(font_path)
+        if path.exists():
+            font_manager.fontManager.addfont(str(path))
+            font_name = font_manager.FontProperties(fname=str(path)).get_name()
+            plt.rcParams["font.sans-serif"] = [font_name, "Microsoft YaHei", "SimHei", "Arial Unicode MS"]
+            break
+    plt.rcParams["axes.unicode_minus"] = False
+
+
+_setup_chinese_font()
+
+
 def ensure_output_dirs(out_dir):
     out = Path(out_dir)
     tables = out / "tables"
     figures = out / "figures"
+    tables_cn = out / "tables_cn"
     tables.mkdir(parents=True, exist_ok=True)
     figures.mkdir(parents=True, exist_ok=True)
+    tables_cn.mkdir(parents=True, exist_ok=True)
     return out, tables, figures
 
 
@@ -33,6 +239,30 @@ def write_csv(path, rows, fieldnames=None):
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def write_csv_cn(path, rows, fieldnames=None):
+    if fieldnames is None:
+        fieldnames = list(rows[0].keys()) if rows else []
+    cn_rows = [_row_to_cn(row, fieldnames) for row in rows]
+    cn_fields = [_field_to_cn(field) for field in fieldnames]
+    write_csv(path, cn_rows, cn_fields)
+
+
+def _field_to_cn(field):
+    return FIELD_CN.get(field, field)
+
+
+def _value_to_cn(value):
+    if isinstance(value, (bool, np.bool_)):
+        return "是" if bool(value) else "否"
+    if value is None:
+        return ""
+    return VALUE_CN.get(value, VALUE_CN.get(str(value), value))
+
+
+def _row_to_cn(row, fieldnames):
+    return {_field_to_cn(field): _value_to_cn(row.get(field, "")) for field in fieldnames}
 
 
 def validate_inputs(data):
@@ -521,15 +751,15 @@ def create_figures(
     _fig_grid_compare(figures_dir / "fig_09_grid_vs_offgrid_cost.png", q3_rows, q4_rows)
     _fig_pareto(figures_dir / "fig_10_pareto_cost_compliance.png", q3_rows)
     _fig_topsis(figures_dir / "fig_11_topsis_radar.png", topsis_candidates)
-    _fig_unit_cost_curve(figures_dir / "q2_typical_unit_cost_by_production.png", q2_summary, "Q2 Discrete Unit Cost")
-    _fig_boxplot(figures_dir / "q2_unit_cost_boxplot.png", q2_rows, "Q2 Unit Cost by Production")
+    _fig_unit_cost_curve(figures_dir / "q2_typical_unit_cost_by_production.png", q2_summary, "问题二离散开停机吨氨成本")
+    _fig_boxplot(figures_dir / "q2_unit_cost_boxplot.png", q2_rows, "问题二不同日产量成本分布")
     _fig_buy_sell(figures_dir / "q2_buy_sell_distribution.png", q2_rows)
     _fig_pie(figures_dir / "q2_annual_classification_pie.png", q2_rows)
-    _fig_unit_cost_curve(figures_dir / "q2_annual_unit_cost_curve.png", q2_summary, "Q2 Annual Unit Cost")
+    _fig_unit_cost_curve(figures_dir / "q2_annual_unit_cost_curve.png", q2_summary, "问题二全年平均吨氨成本")
     _fig_dispatch_examples(figures_dir / "q3_dispatch_examples.png", q3_rows)
-    _fig_boxplot(figures_dir / "q3_unit_cost_boxplot.png", q3_rows, "Q3 Unit Cost by Production")
-    _fig_compare_bar(figures_dir / "q3_vs_q2_unit_cost.png", compare_rows, "delta_unit_cost", "Q3 - Q2 unit cost (yuan/t)")
-    _fig_compare_bar(figures_dir / "q3_vs_q2_green_indicators.png", compare_rows, "delta_R_sell", "Q3 - Q2 sell ratio")
+    _fig_boxplot(figures_dir / "q3_unit_cost_boxplot.png", q3_rows, "问题三连续调节成本分布")
+    _fig_compare_bar(figures_dir / "q3_vs_q2_unit_cost.png", compare_rows, "delta_unit_cost", "问题三相对问题二吨氨成本变化(元/吨)")
+    _fig_compare_bar(figures_dir / "q3_vs_q2_green_indicators.png", compare_rows, "delta_R_sell", "问题三相对问题二上网比例变化")
     _fig_q4_heatmap(figures_dir / "q4_no_storage_production_heatmap.png", q4_rows, "daily_NH3_t")
     _fig_q4_heatmap(figures_dir / "q4_no_storage_curtailment_heatmap.png", q4_rows, "curtail_MWh")
     _fig_scan(figures_dir / "q4_storage_capacity_scan.png", scan_rows)
@@ -643,18 +873,18 @@ def _savefig(path):
 def _fig_q1_power(path, rows):
     h = [r["hour"] for r in rows]
     plt.figure(figsize=(9, 4.8))
-    plt.plot(h, [r["P_load_total_MW"] for r in rows], label="Total load (MW)")
-    plt.plot(h, [r["P_re_MW"] for r in rows], label="Renewable (MW)")
-    plt.bar(h, [r["P_buy_MW"] for r in rows], alpha=0.35, label="Buy (MW)")
-    plt.bar(h, [-r["P_sell_MW"] for r in rows], alpha=0.35, label="Sell (MW)")
-    plt.xlabel("Hour")
-    plt.ylabel("Power (MW)")
+    plt.plot(h, [r["P_load_total_MW"] for r in rows], label="总负荷(MW)")
+    plt.plot(h, [r["P_re_MW"] for r in rows], label="新能源出力(MW)")
+    plt.bar(h, [r["P_buy_MW"] for r in rows], alpha=0.35, label="网购功率(MW)")
+    plt.bar(h, [-r["P_sell_MW"] for r in rows], alpha=0.35, label="上网功率(MW)")
+    plt.xlabel("时刻")
+    plt.ylabel("功率(MW)")
     plt.legend()
     _savefig(path)
 
 
 def _fig_q1_energy(path, rows):
-    labels = ["Load", "Renewable", "Buy", "Sell"]
+    labels = ["总用电量", "新能源发电量", "网购电量", "上网电量"]
     vals = [
         sum(r["P_load_total_MW"] for r in rows),
         sum(r["P_re_MW"] for r in rows),
@@ -663,20 +893,20 @@ def _fig_q1_energy(path, rows):
     ]
     plt.figure(figsize=(6, 4))
     plt.bar(labels, vals, color=["#3B82F6", "#22C55E", "#F59E0B", "#EF4444"])
-    plt.ylabel("Energy (MWh)")
+    plt.ylabel("电量(MWh)")
     _savefig(path)
 
 
 def _fig_q1_indicators(path, q1_metrics):
     metrics = q1_metrics[0] if q1_metrics else {"R_self": 0, "R_green": 0, "R_sell": 0}
     plt.figure(figsize=(6, 4))
-    labels = ["Self-use", "Green load", "Sell"]
+    labels = ["自发自用率", "绿电用电比例", "上网比例"]
     values = [metrics["R_self"], metrics["R_green"], metrics["R_sell"]]
     thresholds = [0.60, 0.30, 0.20]
     x = np.arange(len(labels))
-    plt.bar(x - 0.18, values, width=0.36, label="Actual")
-    plt.bar(x + 0.18, thresholds, width=0.36, label="Threshold")
-    plt.ylabel("Ratio")
+    plt.bar(x - 0.18, values, width=0.36, label="实际值")
+    plt.bar(x + 0.18, thresholds, width=0.36, label="政策阈值")
+    plt.ylabel("比例")
     plt.xticks(x, labels)
     plt.legend()
     _savefig(path)
@@ -695,17 +925,17 @@ def _fig_q2_heatmap(path, rows):
     plt.figure(figsize=(10, 3.5))
     plt.imshow(mat, aspect="auto", cmap="Blues")
     plt.yticks(range(len(labels)), labels)
-    plt.xlabel("Hour")
-    plt.ylabel("Q_day (t/d)")
-    plt.colorbar(label="On/off")
+    plt.xlabel("时刻")
+    plt.ylabel("日产氨量(吨/日)")
+    plt.colorbar(label="开机状态")
     _savefig(path)
 
 
 def _fig_unit_cost_curve(path, rows, title):
     plt.figure(figsize=(6, 4))
     plt.plot([r["Q_day"] for r in rows], [r["annual_average_unit_cost"] for r in rows], marker="o")
-    plt.xlabel("Production (t/d)")
-    plt.ylabel("Unit cost (yuan/t)")
+    plt.xlabel("日产氨量(吨/日)")
+    plt.ylabel("吨氨成本(元/吨)")
     plt.title(title)
     _savefig(path)
 
@@ -717,8 +947,8 @@ def _fig_boxplot(path, rows, title):
     labels = sorted(by_q, reverse=True)
     plt.figure(figsize=(7, 4))
     plt.boxplot([by_q[q] for q in labels], labels=[str(q) for q in labels])
-    plt.xlabel("Production (t/d)")
-    plt.ylabel("Unit cost (yuan/t)")
+    plt.xlabel("日产氨量(吨/日)")
+    plt.ylabel("吨氨成本(元/吨)")
     plt.title(title)
     _savefig(path)
 
@@ -726,15 +956,15 @@ def _fig_boxplot(path, rows, title):
 def _fig_buy_sell(path, rows):
     plt.figure(figsize=(7, 4))
     plt.scatter([r["E_buy"] for r in rows], [r["E_sell"] for r in rows], s=18, alpha=0.7)
-    plt.xlabel("Buy energy (MWh)")
-    plt.ylabel("Sell energy (MWh)")
+    plt.xlabel("网购电量(MWh)")
+    plt.ylabel("上网电量(MWh)")
     _savefig(path)
 
 
 def _fig_pie(path, rows):
     counts = [sum(1 for r in rows if r["class"] == c) for c in [CLASS_ALL, CLASS_PARTIAL, CLASS_NONE]]
     plt.figure(figsize=(5, 5))
-    plt.pie(counts, labels=["All pass", "Partial", "All fail"], autopct="%1.0f%%")
+    plt.pie(counts, labels=["全满足", "部分满足", "全不满足"], autopct="%1.0f%%")
     _savefig(path)
 
 
@@ -742,9 +972,9 @@ def _fig_dispatch_examples(path, rows):
     sample = rows[0] if rows else None
     plt.figure(figsize=(9, 4))
     if sample:
-        plt.plot([float(x) for x in sample["x_vector"].split()], label=f"{sample['scenario_id']} Q={sample['Q_day']}")
-    plt.xlabel("Hour")
-    plt.ylabel("Load factor")
+        plt.plot([float(x) for x in sample["x_vector"].split()], label=f"{sample['scenario_id']} 日产量={sample['Q_day']}吨")
+    plt.xlabel("时刻")
+    plt.ylabel("负荷率")
     plt.legend()
     _savefig(path)
 
@@ -761,9 +991,9 @@ def _fig_continuous_heatmap(path, rows):
     plt.figure(figsize=(10, 3.5))
     plt.imshow(mat, aspect="auto", cmap="YlGnBu", vmin=0, vmax=1)
     plt.yticks(range(len(labels)), labels)
-    plt.xlabel("Hour")
-    plt.ylabel("Q_day (t/d)")
-    plt.colorbar(label="Load factor")
+    plt.xlabel("时刻")
+    plt.ylabel("日产氨量(吨/日)")
+    plt.colorbar(label="负荷率")
     _savefig(path)
 
 
@@ -775,9 +1005,9 @@ def _fig_6x4_cost(path, rows):
         mat[wi - 1, pi - 1] = r["unit_cost"]
     plt.figure(figsize=(6, 4))
     plt.imshow(mat, aspect="auto", cmap="viridis")
-    plt.xlabel("PV scenario")
-    plt.ylabel("Wind scenario")
-    plt.colorbar(label="Unit cost (yuan/t)")
+    plt.xlabel("光伏场景")
+    plt.ylabel("风电场景")
+    plt.colorbar(label="吨氨成本(元/吨)")
     _savefig(path)
 
 
@@ -789,9 +1019,9 @@ def _fig_policy_margin(path, rows):
         mat[wi - 1, pi - 1] = r["min_policy_margin"]
     plt.figure(figsize=(6, 4))
     plt.imshow(mat, aspect="auto", cmap="RdYlGn")
-    plt.xlabel("PV scenario")
-    plt.ylabel("Wind scenario")
-    plt.colorbar(label="Minimum policy margin")
+    plt.xlabel("光伏场景")
+    plt.ylabel("风电场景")
+    plt.colorbar(label="最小政策裕度")
     _savefig(path)
 
 
@@ -800,8 +1030,8 @@ def _fig_flexible_value(path, rows):
     plt.figure(figsize=(7, 4))
     if vals:
         plt.hist(vals, bins=20, color="#22C55E")
-    plt.xlabel("Unit cost reduction from continuous operation (yuan/t)")
-    plt.ylabel("Count")
+    plt.xlabel("连续调节带来的吨氨成本下降(元/吨)")
+    plt.ylabel("场景数")
     _savefig(path)
 
 
@@ -820,9 +1050,9 @@ def _fig_storage_2d(path, rows):
     plt.imshow(mat, aspect="auto", origin="lower", cmap="magma")
     plt.xticks(range(len(e_vals)), [f"{v:.0f}" for v in e_vals], rotation=45)
     plt.yticks(range(len(p_vals)), [f"{v:.0f}" for v in p_vals])
-    plt.xlabel("Energy capacity (MWh)")
-    plt.ylabel("Power capacity (MW)")
-    plt.colorbar(label="Storage unit cost (yuan/t)")
+    plt.xlabel("储能容量(MWh)")
+    plt.ylabel("储能功率(MW)")
+    plt.colorbar(label="储能单位成本(元/吨)")
     _savefig(path)
 
 
@@ -834,8 +1064,8 @@ def _fig_storage_marginal(path, rows):
         c = [float(r["storage_unit_cost_yuan_per_t"]) for r in ordered]
         marginal = [(c[i - 1] - c[i]) / (e[i] - e[i - 1]) for i in range(1, len(e)) if e[i] != e[i - 1]]
         plt.plot(e[1:1 + len(marginal)], marginal, marker="o")
-    plt.xlabel("Storage capacity (MWh)")
-    plt.ylabel("Marginal unit-cost reduction")
+    plt.xlabel("储能容量(MWh)")
+    plt.ylabel("边际单位成本变化")
     _savefig(path)
 
 
@@ -845,13 +1075,13 @@ def _fig_pareto(path, rows):
         cost = [r["unit_cost"] for r in rows]
         margin = [min(r["R_self"] - 0.60, r["R_green"] - 0.30, 0.20 - r["R_sell"]) for r in rows]
         plt.scatter(cost, margin, s=18, alpha=0.7)
-    plt.xlabel("Unit cost (yuan/t)")
-    plt.ylabel("Minimum policy margin")
+    plt.xlabel("吨氨成本(元/吨)")
+    plt.ylabel("最小政策裕度")
     _savefig(path)
 
 
 def _fig_topsis(path, rows):
-    labels = ["Cost", "Pass", "NH3", "Storage", "Grid"]
+    labels = ["成本", "达标", "产量", "储能", "电网"]
     best = rows[0] if rows else None
     values = [0, 0, 0, 0, 0]
     if best:
@@ -882,7 +1112,7 @@ def _fig_compare_bar(path, rows, key, title):
     if vals:
         plt.hist(vals, bins=20, color="#3B82F6")
     plt.xlabel(title)
-    plt.ylabel("Count")
+    plt.ylabel("场景数")
     _savefig(path)
 
 
@@ -890,17 +1120,17 @@ def _fig_q4_heatmap(path, rows, key):
     vals = np.array([r[key] for r in rows], dtype=float).reshape(6, 4)
     plt.figure(figsize=(6, 4))
     plt.imshow(vals, aspect="auto", cmap="YlGnBu")
-    plt.xlabel("PV scenario")
-    plt.ylabel("Wind scenario")
-    plt.colorbar(label=key)
+    plt.xlabel("光伏场景")
+    plt.ylabel("风电场景")
+    plt.colorbar(label=_field_to_cn(key))
     _savefig(path)
 
 
 def _fig_scan(path, rows):
     plt.figure(figsize=(6, 4))
     plt.plot([r["E_cap_MWh"] for r in rows], [r["storage_unit_cost_yuan_per_t"] for r in rows], marker="o")
-    plt.xlabel("Storage capacity (MWh)")
-    plt.ylabel("Storage unit cost (yuan/t)")
+    plt.xlabel("储能容量(MWh)")
+    plt.ylabel("储能单位成本(元/吨)")
     _savefig(path)
 
 
@@ -916,13 +1146,13 @@ def _fig_storage_soc(path, rows):
     subset = sorted([r for r in rows if r["scenario_id"] == scenario], key=lambda r: int(r["hour"]))
     h = [int(r["hour"]) for r in subset]
     plt.figure(figsize=(9, 4.8))
-    plt.plot(h, [float(r["SOC_MWh"]) for r in subset], marker="o", label="SOC (MWh)")
-    plt.bar(h, [float(r["P_charge_MW"]) for r in subset], alpha=0.35, label="Charge (MW)")
-    plt.bar(h, [-float(r["P_discharge_MW"]) for r in subset], alpha=0.35, label="Discharge (MW)")
-    plt.plot(h, [float(r["P_curtail_MW"]) for r in subset], linestyle="--", label="Curtailment (MW)")
-    plt.xlabel("Hour")
-    plt.ylabel("Power / energy")
-    plt.title(f"Storage dispatch in {scenario}")
+    plt.plot(h, [float(r["SOC_MWh"]) for r in subset], marker="o", label="荷电量(MWh)")
+    plt.bar(h, [float(r["P_charge_MW"]) for r in subset], alpha=0.35, label="充电功率(MW)")
+    plt.bar(h, [-float(r["P_discharge_MW"]) for r in subset], alpha=0.35, label="放电功率(MW)")
+    plt.plot(h, [float(r["P_curtail_MW"]) for r in subset], linestyle="--", label="弃电功率(MW)")
+    plt.xlabel("时刻")
+    plt.ylabel("功率/电量")
+    plt.title(f"{scenario}场景储能调度")
     plt.legend()
     _savefig(path)
 
@@ -938,10 +1168,10 @@ def _fig_storage_improvement(path, base_rows, storage_rows):
     curtail_drop = [float(base_by_id[r["scenario_id"]]["curtail_MWh"]) - float(r["curtail_MWh"]) for r in rows]
     x = np.arange(len(labels))
     plt.figure(figsize=(9, 4.8))
-    plt.bar(x - 0.18, delta_nh3, width=0.36, label="NH3 gain (t/d)")
-    plt.bar(x + 0.18, curtail_drop, width=0.36, label="Curtailment reduction (MWh)")
+    plt.bar(x - 0.18, delta_nh3, width=0.36, label="产氨提升(吨/日)")
+    plt.bar(x + 0.18, curtail_drop, width=0.36, label="弃电减少(MWh)")
     plt.xticks(x, labels)
-    plt.ylabel("Improvement")
+    plt.ylabel("改善量")
     plt.legend()
     _savefig(path)
 
@@ -956,9 +1186,9 @@ def _fig_grid_cost_scatter(path, rows):
     plt.scatter(x, y, s=35, alpha=0.8)
     lo = min(x + y)
     hi = max(x + y)
-    plt.plot([lo, hi], [lo, hi], color="#64748B", linestyle="--", label="Parity")
-    plt.xlabel("Grid-connected unit cost (yuan/t)")
-    plt.ylabel("Off-grid unit cost (yuan/t)")
+    plt.plot([lo, hi], [lo, hi], color="#64748B", linestyle="--", label="成本相等线")
+    plt.xlabel("联网吨氨成本(元/吨)")
+    plt.ylabel("离网吨氨成本(元/吨)")
     plt.legend()
     _savefig(path)
 
@@ -975,7 +1205,7 @@ def _fig_grid_support_value(path, rows):
     plt.bar(labels, vals, color=colors)
     plt.axhline(0, color="#111827", linewidth=0.8)
     plt.xticks(rotation=45, ha="right")
-    plt.ylabel("Off-grid minus grid cost (yuan/t)")
+    plt.ylabel("离网成本-联网成本(元/吨)")
     _savefig(path)
 
 
@@ -983,15 +1213,15 @@ def _fig_min_capacity(path, rows):
     if not rows:
         _fig_placeholder(path, "No capacity rows")
         return
-    labels = [r["method"].replace("_", "\n") for r in rows]
+    labels = [_method_label_cn(r["method"]) for r in rows]
     wind = [float(r["wind_MW"]) for r in rows]
     pv = [float(r["pv_MW"]) for r in rows]
     x = np.arange(len(rows))
     plt.figure(figsize=(7, 4.8))
-    plt.bar(x, wind, label="Wind MW")
-    plt.bar(x, pv, bottom=wind, label="PV MW")
+    plt.bar(x, wind, label="风电容量(MW)")
+    plt.bar(x, pv, bottom=wind, label="光伏容量(MW)")
     plt.xticks(x, labels)
-    plt.ylabel("Required capacity (MW)")
+    plt.ylabel("所需装机容量(MW)")
     plt.legend()
     _savefig(path)
 
@@ -1005,11 +1235,11 @@ def _fig_stochastic(path, rows):
     probs = [float(r["probability"]) for r in ordered]
     costs = [float(r["unit_cost"]) for r in ordered]
     fig, ax1 = plt.subplots(figsize=(8, 4.8))
-    ax1.bar(labels, probs, color="#3B82F6", alpha=0.65, label="Probability")
-    ax1.set_ylabel("Probability")
+    ax1.bar(labels, probs, color="#3B82F6", alpha=0.65, label="概率")
+    ax1.set_ylabel("概率")
     ax2 = ax1.twinx()
-    ax2.plot(labels, costs, color="#EF4444", marker="o", label="Unit cost")
-    ax2.set_ylabel("Unit cost (yuan/t)")
+    ax2.plot(labels, costs, color="#EF4444", marker="o", label="吨氨成本")
+    ax2.set_ylabel("吨氨成本(元/吨)")
     fig.tight_layout()
     plt.savefig(path, dpi=180)
     plt.close()
@@ -1027,9 +1257,17 @@ def _fig_grid_compare(path, q3_rows, q4_rows):
     if q3_rows and q4_rows:
         grid_cost = np.mean([r["unit_cost"] for r in q3_rows if r["Q_day"] == 72])
         off_prod = np.mean([r["daily_NH3_t"] for r in q4_rows])
-        plt.bar(["Grid-connected Q3 cost", "Off-grid avg NH3"], [grid_cost, off_prod])
-    plt.ylabel("Value")
+        plt.bar(["联网问题三成本", "离网平均产量"], [grid_cost, off_prod])
+    plt.ylabel("数值")
     _savefig(path)
+
+
+def _method_label_cn(method):
+    labels = {
+        "LP_min_total_wind_pv_capacity": "最小总装机\n线性规划",
+        "fixed_wind_pv_ratio_scale": "固定风光比例\n等比例放大",
+    }
+    return labels.get(method, str(method).replace("_", "\n"))
 
 
 def _cvar90(values):

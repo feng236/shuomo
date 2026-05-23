@@ -40,6 +40,7 @@ from reporting import (
     topsis_candidates_rows,
     validate_inputs,
     write_csv,
+    write_csv_cn,
     write_result_summary,
 )
 
@@ -514,6 +515,7 @@ def stochastic_representative_rows(data):
 
 def run(data_dir, out_dir):
     out, tables, figures = ensure_output_dirs(out_dir)
+    tables_cn = out / "tables_cn"
     data = load_all_attachments(data_dir)
     scenarios = build_scenarios(data)
     q_values = [72, 63, 54, 45, 36]
@@ -591,7 +593,9 @@ def run(data_dir, out_dir):
     }
     for name, data_rows in table_files.items():
         write_csv(tables / name, data_rows)
+        write_csv_cn(tables_cn / name, data_rows)
         print(f"Saved {tables / name}")
+        print(f"Saved {tables_cn / name}")
 
     # Backward-compatible root-level outputs used by earlier iterations.
     write_csv(out / "all_results_v2_metering.csv", rows)

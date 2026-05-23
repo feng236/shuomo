@@ -1,0 +1,16 @@
+﻿验收项,状态,实际值,期望值
+q1_hourly_rows,通过,24,24
+q2_rows,通过,120,120
+q3_rows,通过,120,120
+q1_power_balance,通过,0.0,<1e-6
+metering_E_self_identity,通过,0.0,E_self=E_re-E_sell-E_curtail
+metering_R_green_formula,通过,0.0,R_green=E_self/E_load
+q3_continuous_no_shutdown,通过,0.1,load factor >= 0.1
+q4_storage_rows,通过,24,24
+q4_storage_hourly_rows,通过,576,576
+q4_storage_power_balance,通过,1.4210854715202004e-14,<1e-6
+q4_storage_no_shutdown,通过,0.3,rate_tph >= 0.3
+q4_storage_nonzero_capacity,通过,是,是
+q4_storage_improves_NH3,通过,是,是
+stochastic_representative_rows,通过,8,8
+stochastic_probability_sum,通过,1.0,1.0
