@@ -1,2 +1,2 @@
-﻿E_load,E_re,E_buy,E_sell,E_curtail,E_self,R_self,R_green,R_sell,statement_R_self,pass_self,pass_green,pass_green_2030,pass_sell,class,total_cost,unit_cost
-558.72,603.448,172.04379999999998,216.77179999999998,0.0,386.6762,0.6407779957842267,0.692075100229095,0.3592220042157733,0.2815559915684534,True,True,True,False,部分满足,158891.83313287672,4413.662031468798
+﻿E_load,E_re,E_buy,E_sell,E_curtail,E_self,R_self,R_green,R_sell,statement_R_self,pass_self,pass_green,pass_green_2030,pass_sell,class,baseline_grid_cost,nh3_capex_daily,total_cost,incremental_total_cost,unit_cost,incremental_unit_cost
+558.72,603.448,172.04379999999998,216.77179999999998,0.0,386.6762,0.6407779957842267,0.692075100229095,0.3592220042157733,0.2815559915684534,True,True,True,False,部分满足,38669.996999999996,1643.835616438356,157247.99751643836,118578.00051643836,4367.999931012177,3293.8333476788434

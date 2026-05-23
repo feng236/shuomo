@@ -32,7 +32,7 @@ for i = 1:numel(scenarios)
     storageDailyCost = storage_capex_daily(eCap, params) + sum(sol.charge_mw) * 1000 * params.storage_om_yuan_per_kwh;
     procDailyCost = process_om_cost_for_rates(sol.rate_tph, params);
     reDailyCost = renewable_generation_cost(sc.wind_mw, sc.pv_mw, params);
-    totalDailyCost = storageDailyCost + procDailyCost + reDailyCost;
+    totalDailyCost = storageDailyCost + procDailyCost + reDailyCost + annualized_nh3_capex_daily(72.0, params);
     withRows{i} = table(sc.id, eCap, pCap, dailyNH3, dailyNH3 / 24, curtail, unserved, ...
         sum(sol.charge_mw), sum(sol.discharge_mw), sum(sol.discharge_mw), dailyNH3 - base.daily_NH3_t, ...
         base.curtail_MWh - curtail, max(sol.soc_mwh), totalDailyCost, totalDailyCost / max(dailyNH3, 1e-9), ...
@@ -146,15 +146,6 @@ rows = table(labels, picked.design_scenario_id, picked.E_cap_MWh, picked.P_cap_M
 end
 
 function sol = solve_offgrid_storage_dispatch(P_base, P_re, eCap, pCap, params)
-if exist("intlinprog", "file") == 2
-    try
-        sol = solve_storage_intlinprog(P_base, P_re, eCap, pCap, params);
-        return
-    catch
-        sol = solve_storage_greedy(P_base, P_re, eCap, pCap, params);
-        return
-    end
-end
 sol = solve_storage_greedy(P_base, P_re, eCap, pCap, params);
 end
 
@@ -164,8 +155,7 @@ rateMax = 3.0;
 rateMin = 0.3;
 pPerRate = process_power_for_rate(1.0, params);
 idxR = 1;
-idxY = idxR + n;
-idxCh = idxY + n;
+idxCh = idxR + n;
 idxDis = idxCh + n;
 idxSoc = idxDis + n;
 idxCurt = idxSoc + n;
@@ -174,15 +164,15 @@ idxMode = idxShed + n;
 nvars = idxMode + n - 1;
 
 f = zeros(nvars, 1);
-f(idxR:idxR+n-1) = -10000;
+f(idxR:idxCh-1) = -10000;
 f(idxCh:idxDis-1) = 0.01;
 f(idxDis:idxSoc-1) = 0.01;
 f(idxCurt:idxShed-1) = 1.0;
 f(idxShed:idxMode-1) = 1e6;
 lb = zeros(nvars, 1);
 ub = inf(nvars, 1);
-ub(idxR:idxY-1) = rateMax;
-ub(idxY:idxCh-1) = 1;
+lb(idxR:idxCh-1) = rateMin;
+ub(idxR:idxCh-1) = rateMax;
 ub(idxCh:idxDis-1) = pCap;
 ub(idxDis:idxSoc-1) = pCap;
 ub(idxSoc:idxCurt-1) = eCap;
@@ -191,15 +181,11 @@ ub(idxMode:idxMode+n-1) = 1;
 A = [];
 b = [];
 row = zeros(1, nvars);
-row(idxR:idxY-1) = 1;
+row(idxR:idxCh-1) = 1;
 A = [A; row]; %#ok<AGROW>
 b = [b; 72]; %#ok<AGROW>
 
 for t = 1:n
-    row = zeros(1, nvars); row(idxR+t-1) = 1; row(idxY+t-1) = -rateMax;
-    A = [A; row]; b = [b; 0]; %#ok<AGROW>
-    row = zeros(1, nvars); row(idxR+t-1) = -1; row(idxY+t-1) = rateMin;
-    A = [A; row]; b = [b; 0]; %#ok<AGROW>
     row = zeros(1, nvars); row(idxCh+t-1) = 1; row(idxMode+t-1) = -pCap;
     A = [A; row]; b = [b; 0]; %#ok<AGROW>
     row = zeros(1, nvars); row(idxDis+t-1) = 1; row(idxMode+t-1) = pCap;
@@ -224,19 +210,20 @@ for t = 1:n
     Aeq(n+t, idxDis+t-1) = 1 / params.storage_eta_dis;
 end
 
-intcon = [idxY:idxCh-1, idxMode:idxMode+n-1];
+intcon = idxMode:idxMode+n-1;
 opts = optimoptions("intlinprog", Display="off");
 x = intlinprog(f, intcon, A, b, Aeq, beq, lb, ub, opts);
 if isempty(x)
     error("intlinprog failed");
 end
-sol = storage_solution_from_vector(x, idxR, idxY, idxCh, idxDis, idxSoc, idxCurt, idxShed, n, pPerRate);
+sol = storage_solution_from_vector(x, idxR, idxCh, idxDis, idxSoc, idxCurt, idxShed, n, pPerRate);
 end
 
 function sol = solve_storage_greedy(P_base, P_re, eCap, pCap, params)
 n = 24;
 pPerRate = process_power_for_rate(1.0, params);
 pMin = process_power_for_rate(0.3, params);
+pMax = process_power_for_rate(3.0, params);
 rate = zeros(n, 1);
 proc = zeros(n, 1);
 charge = zeros(n, 1);
@@ -244,27 +231,38 @@ discharge = zeros(n, 1);
 soc = zeros(n, 1);
 curtail = zeros(n, 1);
 deficit = zeros(n, 1);
-    socPrev = 0.5 * eCap;
+    socPrev = 0;
     for t = 1:n
         socPrev = socPrev * (1 - params.storage_self_loss_per_h);
         residual = P_re(t) - P_base(t);
-        if residual >= pMin
-            proc(t) = min(process_power_for_rate(3.0, params), residual);
-        rate(t) = proc(t) / pPerRate;
+        if residual >= pMax
+            proc(t) = pMax;
+            rate(t) = proc(t) / pPerRate;
             surplus = residual - proc(t);
             charge(t) = min([max(surplus, 0), pCap, max(eCap - socPrev, 0) / max(params.storage_eta_ch, 1e-9)]);
-            socNow = socPrev + params.storage_eta_ch * charge(t);
-        else
-            neededForMin = max(pMin - residual, 0);
+        elseif residual >= pMin
             canDischarge = min(pCap, socPrev * params.storage_eta_dis);
-            discharge(t) = min(canDischarge, neededForMin);
-            available = residual + discharge(t);
-        if available >= pMin
-            proc(t) = min(process_power_for_rate(3.0, params), available);
+            discharge(t) = min(canDischarge, pMax - residual);
+            proc(t) = residual + discharge(t);
             rate(t) = proc(t) / pPerRate;
+        else
+            canDischarge = min(pCap, socPrev * params.storage_eta_dis);
+            needForMin = pMin - residual;
+            discharge(t) = min(canDischarge, needForMin);
+            available = residual + discharge(t);
+            if available >= pMin
+                remainingEnergy = max(socPrev - discharge(t) / max(params.storage_eta_dis, 1e-9), 0) * params.storage_eta_dis;
+                remainingPower = max(pCap - discharge(t), 0);
+                extra = min([pMax - available, remainingEnergy, remainingPower]);
+                discharge(t) = discharge(t) + extra;
+                available = available + extra;
+                proc(t) = available;
+            else
+                proc(t) = pMin;
             end
-            socNow = socPrev - discharge(t) / max(params.storage_eta_dis, 1e-9);
+            rate(t) = proc(t) / pPerRate;
         end
+        socNow = socPrev + params.storage_eta_ch * charge(t) - discharge(t) / max(params.storage_eta_dis, 1e-9);
         soc(t) = min(max(socNow, 0), eCap);
         socPrev = soc(t);
         gap = P_re(t) + discharge(t) - P_base(t) - proc(t) - charge(t);
@@ -280,8 +278,8 @@ sol.curtail_mwh = curtail;
 sol.deficit_mwh = deficit;
 end
 
-function sol = storage_solution_from_vector(x, idxR, idxY, idxCh, idxDis, idxSoc, idxCurt, idxShed, n, pPerRate)
-sol.rate_tph = max(x(idxR:idxY-1), 0);
+function sol = storage_solution_from_vector(x, idxR, idxCh, idxDis, idxSoc, idxCurt, idxShed, n, pPerRate)
+sol.rate_tph = max(x(idxR:idxCh-1), 0);
 sol.proc_power_mw = pPerRate * sol.rate_tph;
 sol.charge_mw = max(x(idxCh:idxDis-1), 0);
 sol.discharge_mw = max(x(idxDis:idxSoc-1), 0);
@@ -299,4 +297,9 @@ factor = rate / params.nh3_rate_tph_36;
 cost = 1000 * sum(params.alk_om_yuan_per_kwh * params.alk_mw_36 .* factor ...
     + params.pem_om_yuan_per_kwh * params.pem_mw_36 .* factor ...
     + params.nh3_om_yuan_per_kwh * params.nh3_mw_36 .* factor);
+end
+
+function cost = annualized_nh3_capex_daily(capacityTpd, params)
+kgH2PerHour = 0.2 * capacityTpd * 1000 / 24;
+cost = params.nh3_capex_yuan_per_kgH2_per_h * kgH2PerHour / (params.nh3_life_year * 365);
 end

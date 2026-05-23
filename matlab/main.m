@@ -52,7 +52,7 @@ storageTrace = storage_trace_report_rows(q4WithStorage);
 topsisCandidates = topsis_candidates_rows(q2Annual, q3Annual, q4StorageAnnual, q4GridVs);
 acceptance = acceptance_report(q1Hourly, q2, q3, q4WithStorage, q4StorageHourly, stochasticRows);
 
-write_metric_table(fullfile(tablesDir, "q1_metrics.csv"), q1Metrics);
+write_metric_table(fullfile(tablesDir, "q1_metrics.csv"), q1Metrics, q1Hourly, params);
 writetable(q1Hourly, fullfile(tablesDir, "q1_hourly_balance.csv"));
 writetable(q2, fullfile(tablesDir, "q2_discrete_scenarios.csv"));
 writetable(q3, fullfile(tablesDir, "q3_continuous_scenarios.csv"));
@@ -98,6 +98,8 @@ params.alk_om_yuan_per_kwh = 0.10;
 params.pem_om_yuan_per_kwh = 0.15;
 params.nh3_om_yuan_per_kwh = 0.002;
 params.feedin_yuan_per_kwh = 0.3779;
+params.nh3_capex_yuan_per_kgH2_per_h = 60000.0;
+params.nh3_life_year = 30.0;
 params.storage_capex_yuan_per_kwh = 1000.0;
 params.storage_om_yuan_per_kwh = 0.01;
 params.storage_life_year = 15.0;
@@ -147,10 +149,33 @@ rows = table((0:23)', string(data.times), data.base_load_mw, pEha, pLoad, pWind,
     VariableNames=["hour","time_label","P_base_MW","P_eha_MW","P_load_total_MW","P_wind_MW","P_pv_MW","P_re_MW","P_buy_MW","P_sell_MW"]);
 end
 
-function write_metric_table(path, m)
+function write_metric_table(path, m, q1Hourly, params)
+baselineGridCost = sum(q1Hourly.P_base_MW .* params.tou_price) * 1000;
+nh3CapexDaily = annualized_nh3_capex_daily(36.0, params);
+totalCost = daily_cost_from_hourly(q1Hourly.P_wind_MW, q1Hourly.P_pv_MW, q1Hourly.P_buy_MW, q1Hourly.P_sell_MW, ...
+    params.nh3_rate_tph_36 * ones(24, 1), 36.0, params);
 row = table(m.E_load, m.E_re, m.E_buy, m.E_sell, m.E_curtail, m.E_self, m.R_self, m.R_green, m.R_sell, ...
     m.M_self, m.M_green, m.M_green_2030, m.M_sell, m.pass_self, m.pass_green, m.pass_green_2030, m.pass_sell, string(m.pass_class), ...
+    totalCost, totalCost - baselineGridCost, totalCost / 36.0, (totalCost - baselineGridCost) / 36.0, ...
+    baselineGridCost, nh3CapexDaily, ...
     VariableNames=["E_load","E_re","E_buy","E_sell","E_curtail","E_self","R_self","R_green","R_sell", ...
-    "M_self","M_green","M_green_2030","M_sell","pass_self","pass_green","pass_green_2030","pass_sell","class"]);
+    "M_self","M_green","M_green_2030","M_sell","pass_self","pass_green","pass_green_2030","pass_sell","class", ...
+    "total_cost","incremental_total_cost","unit_cost","incremental_unit_cost","baseline_grid_cost","nh3_capex_daily"]);
 writetable(row, path);
+end
+
+function cost = daily_cost_from_hourly(P_wind, P_pv, P_buy, P_sell, rate, capacityTpd, params)
+factor = rate / params.nh3_rate_tph_36;
+pAlk = params.alk_mw_36 * factor;
+pPem = params.pem_mw_36 * factor;
+pNh3 = params.nh3_mw_36 * factor;
+costRenew = 1000 * sum(params.wind_lcoe_yuan_per_kwh * P_wind + params.pv_lcoe_yuan_per_kwh * P_pv);
+costGrid = 1000 * sum(params.tou_price .* P_buy - params.feedin_yuan_per_kwh * P_sell);
+costProc = 1000 * sum(params.alk_om_yuan_per_kwh * pAlk + params.pem_om_yuan_per_kwh * pPem + params.nh3_om_yuan_per_kwh * pNh3);
+cost = costRenew + costGrid + costProc + annualized_nh3_capex_daily(capacityTpd, params);
+end
+
+function cost = annualized_nh3_capex_daily(capacityTpd, params)
+kgH2PerHour = 0.2 * capacityTpd * 1000 / 24;
+cost = params.nh3_capex_yuan_per_kgH2_per_h * kgH2PerHour / (params.nh3_life_year * 365);
 end

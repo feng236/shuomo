@@ -60,30 +60,23 @@ def solve_continuous_on_grid(base_load_mw, renewable_mw, target_tpd, m_big=200.0
     rate_max, rate_min = 3.0, 0.3
     p_per_rate = process_power_for_rate(1.0)
     om_per_rate = process_om_cost_for_rate(1.0)
-    idx_r, idx_y, idx_b, idx_s, idx_g = 0, n, 2*n, 3*n, 4*n
-    nvars = 5 * n
+    idx_r, idx_b, idx_s, idx_g = 0, n, 2*n, 3*n
+    nvars = 4 * n
     c = np.zeros(nvars)
-    c[idx_r:idx_y] = om_per_rate
+    c[idx_r:idx_b] = om_per_rate
     c[idx_b:idx_s] = TOU_PRICE * 1000
     c[idx_s:idx_g] = -CFG.feedin_yuan_per_kwh * 1000
     lb = np.zeros(nvars)
     ub = np.full(nvars, np.inf)
-    ub[idx_r:idx_y] = rate_max
-    ub[idx_y:idx_b] = 1
+    lb[idx_r:idx_b] = rate_min
+    ub[idx_r:idx_b] = rate_max
     ub[idx_g:idx_g+n] = 1
     integrality = np.zeros(nvars, dtype=int)
-    integrality[idx_y:idx_b] = 1
     integrality[idx_g:idx_g+n] = 1
 
     cons = []
-    row = np.zeros(nvars); row[idx_r:idx_y] = 1
+    row = np.zeros(nvars); row[idx_r:idx_b] = 1
     cons.append(LinearConstraint(row, target_tpd, target_tpd))
-
-    A = lil_matrix((2*n, nvars))
-    for t in range(n):
-        A[t, idx_r+t] = 1; A[t, idx_y+t] = -rate_max
-        A[n+t, idx_r+t] = -1; A[n+t, idx_y+t] = rate_min
-    cons.append(LinearConstraint(A.tocsr(), -np.inf*np.ones(2*n), np.zeros(2*n)))
 
     A = lil_matrix((n, nvars))
     for t in range(n):
@@ -108,24 +101,18 @@ def solve_continuous_on_grid(base_load_mw, renewable_mw, target_tpd, m_big=200.0
     if not res.success:
         raise RuntimeError(res.message)
     x = res.x
-    r = x[idx_r:idx_y]
+    r = x[idx_r:idx_b]
     buy = np.maximum(x[idx_b:idx_s], 0)
     sell = np.maximum(x[idx_s:idx_g], 0)
     return {'rate_tph': r, 'buy_mw': buy, 'sell_mw': sell, 'load_mw': base_load_mw + p_per_rate * r}
 
 def offgrid_no_storage_dispatch(base_load_mw, renewable_mw):
     p_per_rate = process_power_for_rate(1.0)
-    p_full = process_power_for_rate(3.0)
-    p_min = process_power_for_rate(0.3)
     residual = renewable_mw - base_load_mw
-    rate = np.zeros(24)
-    proc = np.zeros(24)
-    for t in range(24):
-        if residual[t] >= p_min:
-            proc[t] = min(p_full, residual[t])
-            rate[t] = proc[t] / p_per_rate
+    rate = np.clip(residual / p_per_rate, 0.3, 3.0)
+    proc = p_per_rate * rate
     curtail = np.maximum(renewable_mw - base_load_mw - proc, 0)
-    deficit = np.maximum(base_load_mw - renewable_mw, 0)
+    deficit = np.maximum(base_load_mw + proc - renewable_mw, 0)
     return {'rate_tph': rate, 'proc_power_mw': proc, 'curtail_mwh': curtail, 'deficit_mwh': deficit}
 
 def solve_offgrid_storage_dispatch(base_load_mw, renewable_mw, e_cap_mwh, p_cap_mw=None, target_tpd=72.0):
@@ -137,12 +124,12 @@ def solve_offgrid_storage_dispatch(base_load_mw, renewable_mw, e_cap_mwh, p_cap_
 
     rate_max, rate_min = 3.0, 0.3
     p_per_rate = process_power_for_rate(1.0)
-    idx_r, idx_y, idx_ch, idx_dis = 0, n, 2*n, 3*n
-    idx_soc, idx_curt, idx_shed, idx_mode = 4*n, 5*n, 6*n, 7*n
-    nvars = 8 * n
+    idx_r, idx_ch, idx_dis = 0, n, 2*n
+    idx_soc, idx_curt, idx_shed, idx_mode = 3*n, 4*n, 5*n, 6*n
+    nvars = 7 * n
 
     c = np.zeros(nvars)
-    c[idx_r:idx_y] = -10000.0
+    c[idx_r:idx_ch] = -10000.0
     c[idx_ch:idx_dis] = 0.01
     c[idx_dis:idx_soc] = 0.01
     c[idx_curt:idx_shed] = 1.0
@@ -150,29 +137,20 @@ def solve_offgrid_storage_dispatch(base_load_mw, renewable_mw, e_cap_mwh, p_cap_
 
     lb = np.zeros(nvars)
     ub = np.full(nvars, np.inf)
-    ub[idx_r:idx_y] = rate_max
-    ub[idx_y:idx_ch] = 1.0
+    lb[idx_r:idx_ch] = rate_min
+    ub[idx_r:idx_ch] = rate_max
     ub[idx_ch:idx_dis] = p_cap_mw
     ub[idx_dis:idx_soc] = p_cap_mw
     ub[idx_soc:idx_curt] = e_cap_mwh
     ub[idx_mode:idx_mode+n] = 1.0
 
     integrality = np.zeros(nvars, dtype=int)
-    integrality[idx_y:idx_ch] = 1
     integrality[idx_mode:idx_mode+n] = 1
 
     cons = []
     row = np.zeros(nvars)
-    row[idx_r:idx_y] = 1.0
+    row[idx_r:idx_ch] = 1.0
     cons.append(LinearConstraint(row, -np.inf, float(target_tpd)))
-
-    A = lil_matrix((2*n, nvars))
-    for t in range(n):
-        A[t, idx_r+t] = 1.0
-        A[t, idx_y+t] = -rate_max
-        A[n+t, idx_r+t] = -1.0
-        A[n+t, idx_y+t] = rate_min
-    cons.append(LinearConstraint(A.tocsr(), -np.inf*np.ones(2*n), np.zeros(2*n)))
 
     A = lil_matrix((2*n, nvars))
     for t in range(n):
@@ -205,7 +183,7 @@ def solve_offgrid_storage_dispatch(base_load_mw, renewable_mw, e_cap_mwh, p_cap_
         raise RuntimeError(res.message)
 
     x = res.x
-    rate = np.maximum(x[idx_r:idx_y], 0)
+    rate = np.maximum(x[idx_r:idx_ch], 0)
     charge = np.maximum(x[idx_ch:idx_dis], 0)
     discharge = np.maximum(x[idx_dis:idx_soc], 0)
     soc = np.maximum(x[idx_soc:idx_curt], 0)
@@ -213,7 +191,6 @@ def solve_offgrid_storage_dispatch(base_load_mw, renewable_mw, e_cap_mwh, p_cap_
     shed = np.maximum(x[idx_shed:idx_mode], 0)
     return {
         'rate_tph': rate,
-        'y': np.rint(x[idx_y:idx_ch]).astype(int),
         'proc_power_mw': p_per_rate * rate,
         'charge_mw': charge,
         'discharge_mw': discharge,

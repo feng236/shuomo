@@ -4,9 +4,11 @@ q2_rows,OK,120,120
 q3_rows,OK,120,120
 q1_power_balance,OK,0,<1e-6
 metering_E_self_identity,OK,0,E_self=E_re-E_sell-E_curtail
+q3_continuous_no_shutdown,OK,0.1,load factor >= 0.1
 q4_storage_rows,OK,24,24
 q4_storage_hourly_rows,OK,576,576
-q4_storage_power_balance,OK,8.88178419700125e-16,<1e-6
+q4_storage_power_balance,OK,3.5527136788005e-15,<1e-6
+q4_storage_no_shutdown,OK,0.3,rate_tph >= 0.3
 q4_storage_nonzero_capacity,OK,1,true
 q4_storage_improves_NH3,OK,1,true
 stochastic_representative_rows,OK,8,8

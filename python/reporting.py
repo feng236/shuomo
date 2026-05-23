@@ -136,7 +136,9 @@ def q2_all_scenarios(rows, schedules):
             "Q_day": row["target_tpd"],
             "H_on": int(round(row["target_tpd"] / 3.0)),
             "total_cost": row["total_cost_yuan"],
+            "incremental_total_cost": row["incremental_total_cost_yuan"],
             "unit_cost": row["ton_cost_yuan_per_t"],
+            "incremental_unit_cost": row["incremental_ton_cost_yuan_per_t"],
             "E_load": row["E_load_MWh"],
             "E_re": row["E_RE_MWh"],
             "E_buy": row["E_buy_MWh"],
@@ -167,7 +169,9 @@ def q3_all_scenarios(rows, schedules):
             "scenario_id": row["scenario"],
             "Q_day": row["target_tpd"],
             "total_cost": row["total_cost_yuan"],
+            "incremental_total_cost": row["incremental_total_cost_yuan"],
             "unit_cost": row["ton_cost_yuan_per_t"],
+            "incremental_unit_cost": row["incremental_ton_cost_yuan_per_t"],
             "E_load": row["E_load_MWh"],
             "E_re": row["E_RE_MWh"],
             "E_buy": row["E_buy_MWh"],
@@ -199,12 +203,15 @@ def annual_summary_for_paper(all_rows, q_field="Q_day"):
         annual_days = len(items) * 15
         annual_nh3 = q * annual_days
         annual_cost = sum(float(r["total_cost"]) for r in items) * 15
+        annual_incremental_cost = sum(float(r.get("incremental_total_cost", r["total_cost"])) for r in items) * 15
         out.append({
             "Q_day": q,
             "annual_days": annual_days,
             "annual_total_NH3": annual_nh3,
             "annual_total_cost": annual_cost,
+            "annual_incremental_total_cost": annual_incremental_cost,
             "annual_average_unit_cost": annual_cost / annual_nh3 if annual_nh3 else np.nan,
+            "annual_average_incremental_unit_cost": annual_incremental_cost / annual_nh3 if annual_nh3 else np.nan,
             "days_all_pass": sum(15 for r in items if r["class"] == CLASS_ALL),
             "days_partial_pass": sum(15 for r in items if r["class"] == CLASS_PARTIAL),
             "days_all_fail": sum(15 for r in items if r["class"] == CLASS_NONE),
@@ -402,13 +409,12 @@ def hard_soft_compare_rows(rows):
 def q4_no_storage_rows(data, scenarios):
     rows = []
     p_per_rate = process_power_for_rate(1.0)
-    p_min = process_power_for_rate(0.3)
     for sc in scenarios:
         residual = sc["renew_mw"] - data.base_load_mw
-        rate = np.where(residual >= p_min, np.minimum(residual / p_per_rate, 3.0), 0.0)
+        rate = np.clip(residual / p_per_rate, 0.3, 3.0)
         proc = p_per_rate * rate
         curtail = np.maximum(sc["renew_mw"] - data.base_load_mw - proc, 0)
-        unserved = np.maximum(data.base_load_mw - sc["renew_mw"], 0)
+        unserved = np.maximum(data.base_load_mw + proc - sc["renew_mw"], 0)
         q_day = float(np.sum(rate))
         rows.append({
             "scenario_id": sc["id"],
@@ -592,6 +598,11 @@ def acceptance_report(q1_rows, q2_rows, q3_rows, q4_storage_rows=None, q4_storag
         if float(r["E_load"]) > 0
     )
     max_q4_balance = max((abs(float(r["balance_residual_MW"])) for r in q4_storage_hourly), default=0.0)
+    min_q3_load_factor = min((
+        min(float(x) for x in str(r["x_vector"]).split())
+        for r in q3_rows
+    ), default=np.nan)
+    min_q4_storage_rate = min((float(r["rate_tph"]) for r in q4_storage_hourly), default=np.nan)
     storage_has_capacity = any(float(r.get("E_cap_MWh", 0.0)) > 0 for r in q4_storage_rows)
     storage_improves = any(float(r.get("delta_NH3_t", 0.0)) > 1e-6 for r in q4_storage_rows)
     stochastic_prob_sum = sum(float(r.get("probability", 0.0)) for r in stochastic_rows)
@@ -602,9 +613,11 @@ def acceptance_report(q1_rows, q2_rows, q3_rows, q4_storage_rows=None, q4_storag
         {"check": "q1_power_balance", "status": "OK" if max_q1_balance < 1e-6 else "FAIL", "value": max_q1_balance, "expected": "<1e-6"},
         {"check": "metering_E_self_identity", "status": "OK" if max_self_identity_gap < 1e-6 else "FAIL", "value": max_self_identity_gap, "expected": "E_self=E_re-E_sell-E_curtail"},
         {"check": "metering_R_green_formula", "status": "OK" if max_green_ratio_gap < 1e-9 else "FAIL", "value": max_green_ratio_gap, "expected": "R_green=E_self/E_load"},
+        {"check": "q3_continuous_no_shutdown", "status": "OK" if min_q3_load_factor >= 0.1 - 1e-6 else "FAIL", "value": min_q3_load_factor, "expected": "load factor >= 0.1"},
         {"check": "q4_storage_rows", "status": "OK" if len(q4_storage_rows) == 24 else "FAIL", "value": len(q4_storage_rows), "expected": 24},
         {"check": "q4_storage_hourly_rows", "status": "OK" if len(q4_storage_hourly) == 576 else "FAIL", "value": len(q4_storage_hourly), "expected": 576},
         {"check": "q4_storage_power_balance", "status": "OK" if max_q4_balance < 1e-6 else "FAIL", "value": max_q4_balance, "expected": "<1e-6"},
+        {"check": "q4_storage_no_shutdown", "status": "OK" if min_q4_storage_rate >= 0.3 - 1e-6 else "FAIL", "value": min_q4_storage_rate, "expected": "rate_tph >= 0.3"},
         {"check": "q4_storage_nonzero_capacity", "status": "OK" if storage_has_capacity else "FAIL", "value": storage_has_capacity, "expected": True},
         {"check": "q4_storage_improves_NH3", "status": "OK" if storage_improves else "FAIL", "value": storage_improves, "expected": True},
         {"check": "stochastic_representative_rows", "status": "OK" if len(stochastic_rows) == 8 else "FAIL", "value": len(stochastic_rows), "expected": 8},

@@ -44,7 +44,9 @@ from reporting import (
 )
 
 
-def total_cost(wind, pv, buy, sell, target_tpd, rates=None, y=None, capacity_tpd=72):
+def total_cost(wind, pv, buy, sell, target_tpd, rates=None, y=None, capacity_tpd=None):
+    if capacity_tpd is None:
+        capacity_tpd = target_tpd
     cost_re = renewable_generation_cost(wind, pv)
     cost_buy = float(np.sum(buy * TOU_PRICE) * 1000)
     revenue = float(np.sum(sell) * CFG.feedin_yuan_per_kwh * 1000)
@@ -57,24 +59,32 @@ def total_cost(wind, pv, buy, sell, target_tpd, rates=None, y=None, capacity_tpd
     return cost_re + cost_buy + cost_proc + annualized_nh3_capex_daily(capacity_tpd) - revenue
 
 
+def baseline_grid_cost(base_load_mw):
+    return float(np.sum(np.asarray(base_load_mw, dtype=float) * TOU_PRICE) * 1000)
+
+
 def solve_row(data, sc, q, mode):
+    installed_capacity_tpd = 72.0
     if mode == "discrete":
         sol = solve_discrete_on_grid(data.base_load_mw, sc["renew_mw"], q)
-        cost = total_cost(sc["wind_mw"], sc["pv_mw"], sol["buy_mw"], sol["sell_mw"], q, y=sol["y"])
+        cost = total_cost(sc["wind_mw"], sc["pv_mw"], sol["buy_mw"], sol["sell_mw"], q, y=sol["y"], capacity_tpd=installed_capacity_tpd)
     elif mode == "continuous":
         sol = solve_continuous_on_grid(data.base_load_mw, sc["renew_mw"], q)
-        cost = total_cost(sc["wind_mw"], sc["pv_mw"], sol["buy_mw"], sol["sell_mw"], q, rates=sol["rate_tph"])
+        cost = total_cost(sc["wind_mw"], sc["pv_mw"], sol["buy_mw"], sol["sell_mw"], q, rates=sol["rate_tph"], capacity_tpd=installed_capacity_tpd)
     else:
         raise ValueError(f"Unsupported mode: {mode}")
 
     mt = green_direct_metrics_metering(sol["load_mw"], sc["renew_mw"], sol["buy_mw"], sol["sell_mw"])
     st = green_direct_metrics_statement(sol["load_mw"], sc["renew_mw"], sol["buy_mw"], sol["sell_mw"])
+    baseline_cost = baseline_grid_cost(data.base_load_mw)
     return {
         "mode": mode,
         "scenario": sc["id"],
         "target_tpd": q,
         "total_cost_yuan": cost,
+        "incremental_total_cost_yuan": cost - baseline_cost,
         "ton_cost_yuan_per_t": cost / q,
+        "incremental_ton_cost_yuan_per_t": (cost - baseline_cost) / q,
         **mt,
         **st,
         "class_metering": classify_metering(mt),
@@ -96,7 +106,9 @@ def q1_metrics(data):
         sell,
         36.0,
         rates=np.full(24, CFG.nh3_rate_tph_36),
+        capacity_tpd=36.0,
     )
+    baseline_cost = baseline_grid_cost(data.base_load_mw)
     return [{
         "E_load": mt["E_load_MWh"],
         "E_re": mt["E_RE_MWh"],
@@ -113,8 +125,12 @@ def q1_metrics(data):
         "pass_green_2030": mt["pass_green_2030"],
         "pass_sell": mt["pass_sell"],
         "class": classify_metering(mt),
+        "baseline_grid_cost": baseline_cost,
+        "nh3_capex_daily": annualized_nh3_capex_daily(36.0),
         "total_cost": cost,
+        "incremental_total_cost": cost - baseline_cost,
         "unit_cost": cost / 36.0,
+        "incremental_unit_cost": (cost - baseline_cost) / 36.0,
     }]
 
 
@@ -167,7 +183,9 @@ def recommendation_rows(rows):
         "target_tpd",
         "class_metering",
         "total_cost_yuan",
+        "incremental_total_cost_yuan",
         "ton_cost_yuan_per_t",
+        "incremental_ton_cost_yuan_per_t",
         "self_use_gen_ratio",
         "green_load_ratio",
         "sell_ratio",
@@ -192,7 +210,9 @@ def q2_typical_tables(data, q_values):
             "Q_day": q,
             "H_on": int(round(q / 3.0)),
             "total_cost": row["total_cost_yuan"],
+            "incremental_total_cost": row["incremental_total_cost_yuan"],
             "unit_cost": row["ton_cost_yuan_per_t"],
+            "incremental_unit_cost": row["incremental_ton_cost_yuan_per_t"],
             "E_load": row["E_load_MWh"],
             "E_re": row["E_RE_MWh"],
             "E_buy": row["E_buy_MWh"],
@@ -229,6 +249,7 @@ def annual_summary_legacy(rows, mode, q_values):
         out.append({
             "Q": q,
             "avg_ton_cost": _mean(items, "ton_cost_yuan_per_t"),
+            "avg_incremental_ton_cost": _mean(items, "incremental_ton_cost_yuan_per_t"),
             "all": sum(1 for r in items if r["class_metering"] == CLASS_ALL),
             "partial": sum(1 for r in items if r["class_metering"] == CLASS_PARTIAL),
             "none": sum(1 for r in items if r["class_metering"] == CLASS_NONE),
@@ -645,6 +666,9 @@ def _legacy_q1(q1_rows):
         "sell_ratio": r["R_sell"],
         "statement_self_ratio_for_check": r["statement_R_self"],
         "ton_cost_yuan_per_t": r["unit_cost"],
+        "incremental_ton_cost_yuan_per_t": r["incremental_unit_cost"],
+        "baseline_grid_cost": r["baseline_grid_cost"],
+        "nh3_capex_daily": r["nh3_capex_daily"],
         "qualification_metering": r["class"],
     }]
 
