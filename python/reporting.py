@@ -748,7 +748,7 @@ def create_figures(
     _fig_flexible_value(figures_dir / "fig_06_flexible_load_value.png", compare_rows)
     _fig_storage_2d(figures_dir / "fig_07_storage_E_P_contour.png", storage_2d)
     _fig_storage_marginal(figures_dir / "fig_08_storage_marginal_value.png", scan_rows)
-    _fig_grid_compare(figures_dir / "fig_09_grid_vs_offgrid_cost.png", q3_rows, q4_rows)
+    _fig_grid_compare(figures_dir / "fig_09_grid_vs_offgrid_cost.png", q4_grid_vs)
     _fig_pareto(figures_dir / "fig_10_pareto_cost_compliance.png", q3_rows)
     _fig_topsis(figures_dir / "fig_11_topsis_radar.png", topsis_candidates)
     _fig_unit_cost_curve(figures_dir / "q2_typical_unit_cost_by_production.png", q2_summary, "问题二离散开停机吨氨成本")
@@ -1081,19 +1081,31 @@ def _fig_pareto(path, rows):
 
 
 def _fig_topsis(path, rows):
-    labels = ["成本", "达标", "产量", "储能", "电网"]
+    labels = ["成本", "达标", "产量", "少储能", "电网价值"]
     best = rows[0] if rows else None
-    values = [0, 0, 0, 0, 0]
-    if best:
+    values = [0.0] * len(labels)
+    if best and rows:
+        costs = np.array([float(r["unit_cost"]) for r in rows], dtype=float)
+        pass_days = np.array([float(r["full_pass_days"]) for r in rows], dtype=float)
+        nh3 = np.array([float(r["annual_NH3"]) for r in rows], dtype=float)
+        storage = np.array([float(r["storage_investment_proxy"]) for r in rows], dtype=float)
+        grid = np.array([max(float(r["grid_support_value"]), 0.0) for r in rows], dtype=float)
+
+        def benefit(value, values_arr):
+            lo, hi = float(np.min(values_arr)), float(np.max(values_arr))
+            return 1.0 if hi - lo < 1e-12 else (float(value) - lo) / (hi - lo)
+
+        def cost_benefit(value, values_arr):
+            lo, hi = float(np.min(values_arr)), float(np.max(values_arr))
+            return 1.0 if hi - lo < 1e-12 else (hi - float(value)) / (hi - lo)
+
         values = [
-            1.0 / max(float(best["unit_cost"]), 1e-9),
-            float(best["full_pass_days"]),
-            float(best["annual_NH3"]),
-            1.0 / (1.0 + float(best["storage_investment_proxy"])),
-            max(float(best["grid_support_value"]), 0.0),
+            cost_benefit(best["unit_cost"], costs),
+            benefit(best["full_pass_days"], pass_days),
+            benefit(best["annual_NH3"], nh3),
+            cost_benefit(best["storage_investment_proxy"], storage),
+            benefit(max(float(best["grid_support_value"]), 0.0), grid),
         ]
-        max_v = max(values) or 1.0
-        values = [v / max_v for v in values]
     angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
     values += values[:1]
     angles += angles[:1]
@@ -1103,6 +1115,8 @@ def _fig_topsis(path, rows):
     ax.fill(angles, values, alpha=0.25)
     ax.set_xticks(angles[:-1])
     ax.set_xticklabels(labels)
+    ax.set_ylim(0, 1)
+    ax.set_title("综合推荐方案归一化指标")
     _savefig(path)
 
 
@@ -1252,13 +1266,20 @@ def _fig_placeholder(path, title):
     _savefig(path)
 
 
-def _fig_grid_compare(path, q3_rows, q4_rows):
-    plt.figure(figsize=(7, 4))
-    if q3_rows and q4_rows:
-        grid_cost = np.mean([r["unit_cost"] for r in q3_rows if r["Q_day"] == 72])
-        off_prod = np.mean([r["daily_NH3_t"] for r in q4_rows])
-        plt.bar(["联网问题三成本", "离网平均产量"], [grid_cost, off_prod])
-    plt.ylabel("数值")
+def _fig_grid_compare(path, rows):
+    if not rows:
+        _fig_placeholder(path, "无联网/离网对比数据")
+        return
+    grid_cost = float(np.nanmean([float(r["grid_connected_unit_cost"]) for r in rows]))
+    offgrid_cost = float(np.nanmean([float(r["offgrid_unit_cost"]) for r in rows]))
+    labels = ["联网方案", "离网+储能方案"]
+    values = [grid_cost, offgrid_cost]
+    plt.figure(figsize=(7, 4.6))
+    bars = plt.bar(labels, values, color=["#2563EB", "#F97316"])
+    plt.ylabel("平均吨氨成本(元/吨)")
+    plt.title("联网与离网储能方案成本对比")
+    for bar, value in zip(bars, values):
+        plt.text(bar.get_x() + bar.get_width() / 2, value, f"{value:.0f}", ha="center", va="bottom")
     _savefig(path)
 
 
