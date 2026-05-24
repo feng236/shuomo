@@ -379,22 +379,57 @@ def q4_storage_optimized_tables(data, scenarios, q4_no_storage, q3_rows, q4_min_
         ),
     }]
 
-    grid_cost_by_scenario = {}
-    for r in q3_rows:
-        if r["Q_day"] == 72:
-            grid_cost_by_scenario[r["scenario_id"]] = r["unit_cost"]
+    scenario_by_id = {sc["id"]: sc for sc in design_scenarios}
     grid_vs = []
     for r in with_storage:
-        off_cost = r["offgrid_unit_cost"]
-        grid_cost = grid_cost_by_scenario.get(r["scenario_id"], np.nan)
+        sc = scenario_by_id[r["scenario_id"]]
+        target_daily_nh3 = float(r["daily_NH3_t"])
+        grid_sol = solve_continuous_on_grid(data.base_load_mw, sc["renew_mw"], target_daily_nh3)
+        grid_daily_cost = total_cost(
+            sc["wind_mw"],
+            sc["pv_mw"],
+            grid_sol["buy_mw"],
+            grid_sol["sell_mw"],
+            target_daily_nh3,
+            rates=grid_sol["rate_tph"],
+            capacity_tpd=72.0,
+        )
+        offgrid_daily_cost = float(r["daily_total_cost"])
+        off_cost = offgrid_daily_cost / target_daily_nh3 if target_daily_nh3 > 0 else np.nan
+        grid_cost = grid_daily_cost / target_daily_nh3 if target_daily_nh3 > 0 else np.nan
         grid_vs.append({
             "scenario_id": r["scenario_id"],
-            "offgrid_daily_NH3_t": r["daily_NH3_t"],
+            "target_daily_NH3_t": target_daily_nh3,
+            "offgrid_daily_NH3_t": target_daily_nh3,
+            "offgrid_daily_cost": offgrid_daily_cost,
+            "grid_connected_daily_cost": grid_daily_cost,
             "offgrid_unit_cost": off_cost,
             "grid_connected_unit_cost": grid_cost,
             "grid_support_value": off_cost - grid_cost if not np.isnan(grid_cost) else np.nan,
+            "grid_support_value_daily": offgrid_daily_cost - grid_daily_cost,
+            "annual_weight_days": 15,
+            "offgrid_annual_cost": offgrid_daily_cost * 15,
+            "grid_connected_annual_cost": grid_daily_cost * 15,
+            "grid_support_value_annual": (offgrid_daily_cost - grid_daily_cost) * 15,
         })
     return scan, with_storage, annual, grid_vs, hourly, minimax_no_storage
+
+
+def q4_grid_vs_annual_summary(grid_vs_rows):
+    annual_nh3 = sum(float(r["target_daily_NH3_t"]) * float(r["annual_weight_days"]) for r in grid_vs_rows)
+    offgrid_cost = sum(float(r["offgrid_annual_cost"]) for r in grid_vs_rows)
+    grid_cost = sum(float(r["grid_connected_annual_cost"]) for r in grid_vs_rows)
+    support_value = offgrid_cost - grid_cost
+    return [{
+        "annual_days": sum(float(r["annual_weight_days"]) for r in grid_vs_rows),
+        "annual_NH3_t": annual_nh3,
+        "offgrid_annual_cost": offgrid_cost,
+        "grid_connected_annual_cost": grid_cost,
+        "offgrid_annual_unit_cost": offgrid_cost / annual_nh3 if annual_nh3 > 0 else np.nan,
+        "grid_connected_annual_unit_cost": grid_cost / annual_nh3 if annual_nh3 > 0 else np.nan,
+        "grid_support_value_annual": support_value,
+        "grid_support_value_yuan_per_t": support_value / annual_nh3 if annual_nh3 > 0 else np.nan,
+    }]
 
 
 def q4_storage_capacity_scan_max_curtailment(data, scenarios, no_storage_rows, max_curtail_row, capacity_basis):
@@ -689,6 +724,7 @@ def run(data_dir, out_dir):
         q3_rows,
         q4_min_capacity,
     )
+    q4_grid_vs_annual = q4_grid_vs_annual_summary(q4_grid_vs)
     q4_storage_recommendations = q4_storage_design_recommendations(q4_scan)
     stochastic_rows = stochastic_representative_rows(data)
     policy_margin = policy_margin_rows(q2_rows, "discrete") + policy_margin_rows(q3_rows, "continuous")
@@ -721,6 +757,7 @@ def run(data_dir, out_dir):
         "q4_storage_design_recommendations.csv": q4_storage_recommendations,
         "q4_minimum_capacity.csv": q4_min_capacity,
         "q4_grid_vs_offgrid.csv": q4_grid_vs,
+        "q4_grid_vs_offgrid_annual_summary.csv": q4_grid_vs_annual,
         "grid_support_value.csv": q4_grid_vs,
         "stochastic_representative_scenarios.csv": stochastic_rows,
         "policy_margin_heatmap.csv": policy_margin,
@@ -765,6 +802,7 @@ def run(data_dir, out_dir):
             "q4_storage_designs": q4_storage_recommendations,
             "q4_min_capacity": q4_min_capacity,
             "q4_grid_vs_offgrid": q4_grid_vs,
+            "q4_grid_vs_annual": q4_grid_vs_annual,
             "stochastic_scenarios": stochastic_rows,
             "policy_margin": policy_margin,
             "scenario_risk": scenario_risk,
