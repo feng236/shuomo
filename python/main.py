@@ -264,10 +264,25 @@ def annual_summary_legacy(rows, mode, q_values):
 
 
 def q4_storage_optimized_tables(data, scenarios, q4_no_storage, q3_rows, q4_min_capacity):
-    capacity_basis = _q4_storage_capacity_basis(q4_min_capacity)
-    design_scenarios = _q4_scaled_scenarios(data, capacity_basis)
-    design_no_storage = q4_no_storage_rows(data, design_scenarios)
-    scan = q4_storage_capacity_scan_minimax(data, design_scenarios, design_no_storage, capacity_basis)
+    minimax_capacity_basis = _q4_storage_capacity_basis(q4_min_capacity)
+    minimax_scenarios = _q4_scaled_scenarios(data, minimax_capacity_basis)
+    minimax_no_storage = q4_no_storage_rows(data, minimax_scenarios)
+
+    capacity_basis = {
+        "method": "max_curtailment_original_capacity",
+        "wind_MW": CFG.wind_cap_mw,
+        "pv_MW": CFG.pv_cap_mw,
+    }
+    design_scenarios = scenarios
+    design_no_storage = q4_no_storage
+    max_curtail_row = max(design_no_storage, key=lambda r: float(r["curtail_MWh"]))
+    scan = q4_storage_capacity_scan_max_curtailment(
+        data,
+        design_scenarios,
+        design_no_storage,
+        max_curtail_row,
+        capacity_basis,
+    )
     feasible_scan = [
         r for r in scan
         if float(r["E_cap_MWh"]) > 0
@@ -279,9 +294,8 @@ def q4_storage_optimized_tables(data, scenarios, q4_no_storage, q3_rows, q4_min_
     best_scan = min(
         feasible_scan,
         key=lambda r: (
-            float(r.get("worst_shortfall_t", np.inf)),
-            float(r.get("storage_daily_cost", np.inf)),
             float(r.get("E_cap_MWh", np.inf)),
+            float(r.get("storage_daily_cost", np.inf)),
         ),
     )
     e_cap = float(best_scan["E_cap_MWh"])
@@ -380,21 +394,17 @@ def q4_storage_optimized_tables(data, scenarios, q4_no_storage, q3_rows, q4_min_
             "grid_connected_unit_cost": grid_cost,
             "grid_support_value": off_cost - grid_cost if not np.isnan(grid_cost) else np.nan,
         })
-    return scan, with_storage, annual, grid_vs, hourly, design_no_storage
+    return scan, with_storage, annual, grid_vs, hourly, minimax_no_storage
 
 
-def q4_storage_capacity_scan_minimax(data, scenarios, no_storage_rows, capacity_basis):
-    full_load_power = process_power_for_rate(3.0)
-    max_full_load_deficit = 0.0
-    for sc in scenarios:
-        full_load_deficit = np.maximum(data.base_load_mw + full_load_power - sc["renew_mw"], 0.0)
-        max_full_load_deficit = max(max_full_load_deficit, float(np.sum(full_load_deficit)))
+def q4_storage_capacity_scan_max_curtailment(data, scenarios, no_storage_rows, max_curtail_row, capacity_basis):
     step = 10.0
-    upper = max(10.0, np.ceil(max_full_load_deficit / step) * step + step)
+    upper = max(10.0, np.ceil(float(max_curtail_row["curtail_MWh"]) / step) * step + step)
     candidates = list(np.arange(0.0, upper + 1e-9, step))
-    base_min_daily_nh3 = min(float(r["daily_NH3_t"]) for r in no_storage_rows)
     base_mean_daily_nh3 = float(np.mean([float(r["daily_NH3_t"]) for r in no_storage_rows]))
-    base_curtail_by_id = {r["scenario_id"]: float(r["curtail_MWh"]) for r in no_storage_rows}
+    no_storage_by_id = {r["scenario_id"]: r for r in no_storage_rows}
+    design_scenario_id = str(max_curtail_row["scenario_id"])
+    base_curtail_by_id = {sid: float(r["curtail_MWh"]) for sid, r in no_storage_by_id.items()}
     rows = []
     for e_cap in candidates:
         p_cap = e_cap / 4.0 if e_cap > 0 else 0.0
@@ -416,35 +426,38 @@ def q4_storage_capacity_scan_minimax(data, scenarios, no_storage_rows, capacity_
                 "unserved_base_MWh": float(np.sum(sol["deficit_mwh"])),
             })
         worst = min(eval_rows, key=lambda r: r["daily_NH3_t"])
+        design_eval = next(r for r in eval_rows if r["scenario_id"] == design_scenario_id)
+        design_base_nh3 = float(max_curtail_row["daily_NH3_t"])
         mean_daily_nh3 = float(np.mean([r["daily_NH3_t"] for r in eval_rows]))
-        mean_charge = float(np.mean([r["storage_charge_MWh"] for r in eval_rows]))
-        cost = storage_capex_daily(e_cap) + mean_charge * 1000 * CFG.storage_om_yuan_per_kwh
-        worst_delta = float(worst["daily_NH3_t"] - base_min_daily_nh3)
+        design_charge = float(design_eval["storage_charge_MWh"])
+        cost = storage_capex_daily(e_cap) + design_charge * 1000 * CFG.storage_om_yuan_per_kwh
+        design_delta = float(design_eval["daily_NH3_t"] - design_base_nh3)
         rows.append({
-            "design_scenario_id": "ALL_MINIMAX",
+            "design_scenario_id": design_scenario_id,
             "capacity_basis_method": capacity_basis["method"],
             "wind_cap_MW": capacity_basis["wind_MW"],
             "pv_cap_MW": capacity_basis["pv_MW"],
             "E_cap_MWh": float(e_cap),
             "P_cap_MW": float(p_cap),
             "duration_h": float(e_cap / p_cap) if p_cap > 0 else np.nan,
-            "daily_NH3_t": float(worst["daily_NH3_t"]),
+            "daily_NH3_t": float(design_eval["daily_NH3_t"]),
             "mean_daily_NH3_t": mean_daily_nh3,
-            "delta_NH3_t": worst_delta,
+            "delta_NH3_t": design_delta,
             "mean_delta_NH3_t": mean_daily_nh3 - base_mean_daily_nh3,
             "worst_shortfall_t": float(worst["shortfall_to_72_t"]),
             "worst_case_scenario_id": worst["scenario_id"],
-            "curtail_MWh": float(max(r["curtail_MWh"] for r in eval_rows)),
+            "curtail_MWh": float(design_eval["curtail_MWh"]),
             "mean_curtail_MWh": float(np.mean([r["curtail_MWh"] for r in eval_rows])),
-            "curtail_reduction_MWh": float(np.mean([r["curtail_reduction_MWh"] for r in eval_rows])),
-            "storage_charge_MWh": float(np.mean([r["storage_charge_MWh"] for r in eval_rows])),
-            "storage_discharge_MWh": float(np.mean([r["storage_discharge_MWh"] for r in eval_rows])),
-            "max_SOC_MWh": float(max(r["max_SOC_MWh"] for r in eval_rows)),
-            "unserved_base_MWh": float(max(r["unserved_base_MWh"] for r in eval_rows)),
+            "curtail_reduction_MWh": float(design_eval["curtail_reduction_MWh"]),
+            "storage_charge_MWh": design_charge,
+            "storage_discharge_MWh": float(design_eval["storage_discharge_MWh"]),
+            "max_SOC_MWh": float(design_eval["max_SOC_MWh"]),
+            "unserved_base_MWh": float(design_eval["unserved_base_MWh"]),
             "storage_daily_cost": float(cost),
-            "storage_unit_cost_yuan_per_t": float(cost / worst["daily_NH3_t"]) if worst["daily_NH3_t"] > 0 else np.nan,
-            "incremental_storage_cost_yuan_per_added_t": float(cost / worst_delta)
-                if worst_delta > 1e-9 else np.nan,
+            "storage_unit_cost_yuan_per_t": float(cost / design_eval["daily_NH3_t"])
+                if design_eval["daily_NH3_t"] > 0 else np.nan,
+            "incremental_storage_cost_yuan_per_added_t": float(cost / design_delta)
+                if design_delta > 1e-9 else np.nan,
         })
     return rows
 
@@ -460,11 +473,7 @@ def q4_storage_design_recommendations(scan_rows):
         return []
 
     picks = [
-        ("minimax_robust_dispatch", min(positive, key=lambda r: (
-            float(r.get("worst_shortfall_t", np.inf)),
-            float(r["storage_daily_cost"]),
-            float(r["E_cap_MWh"]),
-        ))),
+        ("recommended_max_curtailment_storage", min(positive, key=lambda r: float(r["E_cap_MWh"]))),
         ("economic_min_incremental_cost", min(positive, key=lambda r: float(r["incremental_storage_cost_yuan_per_added_t"]))),
         ("max_daily_NH3", max(positive, key=lambda r: float(r["daily_NH3_t"]))),
         ("max_curtailment_reduction", max(positive, key=lambda r: float(r["curtail_reduction_MWh"]))),
@@ -504,11 +513,11 @@ def q4_storage_design_recommendations(scan_rows):
 
 def _storage_recommendation_text(label):
     text = {
-        "minimax_robust_dispatch": "minimizes the worst-case daily ammonia shortfall across all 24 wind/PV scenarios",
-        "economic_min_incremental_cost": "lowest marginal storage cost per added ton of ammonia; use as the cost-first design",
-        "max_daily_NH3": "highest off-grid ammonia output in the scanned storage range",
-        "max_curtailment_reduction": "largest renewable curtailment reduction in the scanned storage range",
-        "smallest_capacity_for_90pct_curtailment_reduction": "smallest storage capacity that captures at least 90% of the maximum achievable curtailment reduction",
+        "recommended_max_curtailment_storage": "minimum positive storage capacity that improves the maximum-curtailment scenario; use as the main answer",
+        "economic_min_incremental_cost": "lowest marginal storage cost per added ton in the maximum-curtailment scenario; use as the main storage design",
+        "max_daily_NH3": "highest ammonia output in the maximum-curtailment scenario across the scanned storage range",
+        "max_curtailment_reduction": "largest curtailment reduction in the maximum-curtailment scenario across the scanned storage range",
+        "smallest_capacity_for_90pct_curtailment_reduction": "smallest storage capacity that captures at least 90% of the maximum-curtailment scenario reduction",
     }
     return text.get(label, "")
 

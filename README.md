@@ -1,9 +1,8 @@
 # 绿电直连电-氢-氨园区优化运行代码包
 
-本仓库面向数学建模竞赛 A 题，按语言划分为两个专区：
+本仓库面向数学建模竞赛 A 题，只保留 Python 主线：
 
-- `python/`：完整计算主线，包含数据读取、MILP/LP 调度、绿电直连指标、Q4 minimax 扩容与储能扫描、风险统计、Pareto/TOPSIS 推荐、论文图表输出。
-- `matlab/`：MATLAB 完整实现版本，使用同一指标口径和 Q4 minimax 口径，可独立生成创新表格、创新图件和验收报告，便于同学在 MATLAB 环境直接运行。
+- `python/`：完整计算主线，包含数据读取、MILP/LP 调度、绿电直连指标、Q4 离网自给性分析、最大弃电场景储能配置、minimax 扩容对照、风险统计、Pareto/TOPSIS 推荐、论文图表输出。
 
 ## 指标口径
 
@@ -49,15 +48,6 @@ python main.py --data_dir "D:\qq file\A题\A题" --out_dir ".\outputs"
 - `python/outputs/tables/topsis_candidates.csv`
 - `python/outputs/figures/fig_01_typical_power_balance.png` 至 `fig_11_topsis_radar.png`
 
-## MATLAB 运行
-
-```matlab
-cd("D:/shumo/green_direct_e_h2_nh3_model_pack_v2/matlab")
-main("D:/qq file/A题/A题", "outputs")
-```
-
-MATLAB 版输出位于 `matlab/outputs/tables` 和 `matlab/outputs/figures`，覆盖政策裕度、风险统计、柔性负荷价值、离网储能、储能 E/P 扫描、绿电溯源、联网/离网支撑价值和 TOPSIS 推荐。
-
 ## 创新输出对应关系
 
 | 创新点 | 代码输出 |
@@ -66,7 +56,8 @@ MATLAB 版输出位于 `matlab/outputs/tables` 和 `matlab/outputs/figures`，�
 | 合规优先的硬/软约束比较 | `hard_soft_compare.csv` |
 | 柔性制氢虚拟储能价值 | `flexible_load_value.csv` |
 | 多场景风险统计与 CVaR | `scenario_risk_summary.csv` |
-| 第四问 minimax 扩容与储能鲁棒配置 | `q4_minimum_capacity.csv`, `q4_storage_design_recommendations.csv` |
+| 第四问最大弃电场景储能配置 | `q4_offgrid_no_storage.csv`, `q4_storage_capacity_scan.csv`, `q4_storage_design_recommendations.csv` |
+| 第四问 minimax 扩容对照 | `q4_minimum_capacity.csv`, `q4_minimax_expanded_no_storage.csv` |
 | 储能容量-功率二维扫描 | `storage_2d_scan.csv` |
 | 储能绿电溯源 | `storage_trace_report.csv` |
 | 联网/离网系统支撑价值 | `grid_support_value.csv` |

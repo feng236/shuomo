@@ -28,7 +28,11 @@ def _read(path: Path) -> pd.DataFrame:
 
 
 def _find_attachment(data_dir: Path, attachment_no: int, keywords=(), required=True) -> Path | None:
-    candidates = sorted(data_dir.glob("*.xlsx")) + sorted(data_dir.glob("*.xls"))
+    candidates = [
+        path
+        for path in sorted(data_dir.glob("*.xlsx")) + sorted(data_dir.glob("*.xls"))
+        if not path.name.startswith("~$")
+    ]
     by_no = [
         path for path in candidates
         if f"附件{attachment_no}" in path.name

@@ -1,9 +1,0 @@
-function rows = hard_soft_compare(tbl, mode)
-marginSelf = tbl.R_self - 0.60;
-marginGreen = tbl.R_green - 0.30;
-marginSell = 0.20 - tbl.R_sell;
-rows = table(repmat(string(mode), height(tbl), 1), tbl.scenario_id, tbl.Q_day, ...
-    marginSelf >= -1e-9 & marginGreen >= -1e-9 & marginSell >= -1e-9, ...
-    max(0, -marginSelf) + max(0, -marginGreen) + max(0, -marginSell), tbl.unit_cost, ...
-    VariableNames=["mode","scenario_id","Q_day","hard_policy_feasible","soft_violation_score","unit_cost"]);
-end

@@ -1,2 +1,0 @@
-E_load,E_re,E_buy,E_sell,E_curtail,E_self,R_self,R_green,R_sell,M_self,M_green,M_green_2030,M_sell,pass_self,pass_green,pass_green_2030,pass_sell,class,total_cost,incremental_total_cost,unit_cost,incremental_unit_cost,baseline_grid_cost,nh3_capex_daily
-558.72,603.448,172.0438,216.7718,0,386.6762,0.640777995784227,0.692075100229095,0.359222004215773,0.0407779957842267,0.392075100229095,0.342075100229095,-0.159222004215773,1,1,1,0,部分满足,157247.997516438,118578.000516438,4367.99993101218,3293.83334767884,38669.997,1643.83561643836
