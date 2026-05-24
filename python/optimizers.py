@@ -115,7 +115,7 @@ def offgrid_no_storage_dispatch(base_load_mw, renewable_mw):
     deficit = np.maximum(base_load_mw + proc - renewable_mw, 0)
     return {'rate_tph': rate, 'proc_power_mw': proc, 'curtail_mwh': curtail, 'deficit_mwh': deficit}
 
-def solve_offgrid_storage_dispatch(base_load_mw, renewable_mw, e_cap_mwh, p_cap_mw=None, target_tpd=72.0):
+def solve_offgrid_storage_dispatch(base_load_mw, renewable_mw, e_cap_mwh, p_cap_mw=None, target_tpd=72.0, min_daily_tpd=0.0):
     n = 24
     e_cap_mwh = float(max(e_cap_mwh, 0.0))
     if p_cap_mw is None:
@@ -150,7 +150,7 @@ def solve_offgrid_storage_dispatch(base_load_mw, renewable_mw, e_cap_mwh, p_cap_
     cons = []
     row = np.zeros(nvars)
     row[idx_r:idx_ch] = 1.0
-    cons.append(LinearConstraint(row, -np.inf, float(target_tpd)))
+    cons.append(LinearConstraint(row, float(min_daily_tpd), float(target_tpd)))
 
     A = lil_matrix((2*n, nvars))
     for t in range(n):

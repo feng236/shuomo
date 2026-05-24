@@ -8,8 +8,8 @@ metering_R_green_formula,OK,0.0,R_green=E_self/E_load
 q3_continuous_no_shutdown,OK,0.1,load factor >= 0.1
 q4_storage_rows,OK,24,24
 q4_storage_hourly_rows,OK,576,576
-q4_storage_power_balance,OK,7.105427357601002e-15,<1e-6
-q4_storage_no_shutdown,OK,0.3,rate_tph >= 0.3
+q4_storage_power_balance,OK,8.348877145181177e-14,<1e-6
+q4_storage_no_shutdown,OK,0.2999999999999999,rate_tph >= 0.3
 q4_storage_nonzero_capacity,OK,True,True
 q4_storage_improves_NH3,OK,True,True
 stochastic_representative_rows,OK,8,8

@@ -305,8 +305,14 @@ def q4_storage_optimized_tables(data, scenarios, q4_no_storage, q3_rows, q4_min_
     hourly = []
     no_storage_by_id = {r["scenario_id"]: r for r in design_no_storage}
     for sc in design_scenarios:
-        sol = solve_offgrid_storage_dispatch(data.base_load_mw, sc["renew_mw"], e_cap, p_cap)
         base = no_storage_by_id[sc["id"]]
+        sol = solve_offgrid_storage_dispatch(
+            data.base_load_mw,
+            sc["renew_mw"],
+            e_cap,
+            p_cap,
+            min_daily_tpd=float(base["daily_NH3_t"]),
+        )
         daily_nh3 = float(sol["daily_nh3_t"])
         curtail = float(np.sum(sol["curtail_mwh"]))
         unserved = float(np.sum(sol["deficit_mwh"]))
@@ -445,7 +451,14 @@ def q4_storage_capacity_scan_max_curtailment(data, scenarios, no_storage_rows, m
         p_cap = e_cap / 4.0 if e_cap > 0 else 0.0
         eval_rows = []
         for sc in scenarios:
-            sol = solve_offgrid_storage_dispatch(data.base_load_mw, sc["renew_mw"], e_cap, p_cap)
+            base = no_storage_by_id[sc["id"]]
+            sol = solve_offgrid_storage_dispatch(
+                data.base_load_mw,
+                sc["renew_mw"],
+                e_cap,
+                p_cap,
+                min_daily_tpd=float(base["daily_NH3_t"]),
+            )
             daily_nh3 = float(sol["daily_nh3_t"])
             curtail = float(np.sum(sol["curtail_mwh"]))
             charge = float(np.sum(sol["charge_mw"]))
