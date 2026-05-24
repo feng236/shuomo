@@ -2,8 +2,8 @@
 
 本仓库面向数学建模竞赛 A 题，按语言划分为两个专区：
 
-- `python/`：完整计算主线，包含数据读取、MILP/LP 调度、绿电直连指标、储能扫描、风险统计、Pareto/TOPSIS 推荐、论文图表输出。
-- `matlab/`：MATLAB 完整实现版本，使用同一指标口径，可独立生成创新表格、创新图件和验收报告，便于同学在 MATLAB 环境直接运行。
+- `python/`：完整计算主线，包含数据读取、MILP/LP 调度、绿电直连指标、Q4 minimax 扩容与储能扫描、风险统计、Pareto/TOPSIS 推荐、论文图表输出。
+- `matlab/`：MATLAB 完整实现版本，使用同一指标口径和 Q4 minimax 口径，可独立生成创新表格、创新图件和验收报告，便于同学在 MATLAB 环境直接运行。
 
 ## 指标口径
 
@@ -40,6 +40,9 @@ python main.py --data_dir "D:\qq file\A题\A题" --out_dir ".\outputs"
 - `python/outputs/tables/policy_margin_heatmap.csv`
 - `python/outputs/tables/scenario_risk_summary.csv`
 - `python/outputs/tables/flexible_load_value.csv`
+- `python/outputs/tables/q4_minimum_capacity.csv`
+- `python/outputs/tables/q4_minimax_expanded_no_storage.csv`
+- `python/outputs/tables/q4_storage_design_recommendations.csv`
 - `python/outputs/tables/storage_2d_scan.csv`
 - `python/outputs/tables/storage_trace_report.csv`
 - `python/outputs/tables/grid_support_value.csv`
@@ -63,6 +66,7 @@ MATLAB 版输出位于 `matlab/outputs/tables` 和 `matlab/outputs/figures`，�
 | 合规优先的硬/软约束比较 | `hard_soft_compare.csv` |
 | 柔性制氢虚拟储能价值 | `flexible_load_value.csv` |
 | 多场景风险统计与 CVaR | `scenario_risk_summary.csv` |
+| 第四问 minimax 扩容与储能鲁棒配置 | `q4_minimum_capacity.csv`, `q4_storage_design_recommendations.csv` |
 | 储能容量-功率二维扫描 | `storage_2d_scan.csv` |
 | 储能绿电溯源 | `storage_trace_report.csv` |
 | 联网/离网系统支撑价值 | `grid_support_value.csv` |

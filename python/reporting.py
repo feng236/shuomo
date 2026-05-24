@@ -33,6 +33,10 @@ FIELD_CN = {
     "scenario_id": "场景编号",
     "wind_scenario": "风电场景",
     "pv_scenario": "光伏场景",
+    "wind_MW": "风电装机(MW)",
+    "pv_MW": "光伏装机(MW)",
+    "total_MW": "总装机(MW)",
+    "scale_vs_current": "相对现有装机倍数",
     "target_tpd": "目标日产氨量(吨)",
     "Q": "日产氨量(吨)",
     "Q_day": "日产氨量(吨)",
@@ -131,8 +135,18 @@ FIELD_CN = {
     "P_cap_MW": "储能功率(MW)",
     "duration_h": "储能时长(小时)",
     "design_scenario_id": "设计场景",
+    "capacity_basis_method": "扩容基准方法",
+    "wind_cap_MW": "扩容后风电装机(MW)",
+    "pv_cap_MW": "扩容后光伏装机(MW)",
     "delta_NH3_t": "产量提升(吨/日)",
+    "mean_daily_NH3_t": "平均日合成氨产量(吨)",
+    "mean_delta_NH3_t": "平均产量提升(吨/日)",
+    "shortfall_to_72_t": "距离72吨缺口(吨/日)",
+    "worst_shortfall_t": "最坏场景产量缺口(吨/日)",
+    "worst_daily_NH3_t": "最坏场景日产氨量(吨)",
+    "worst_case_scenario_id": "最坏场景编号",
     "curtail_reduction_MWh": "弃电减少量(MWh)",
+    "mean_curtail_MWh": "平均弃电量(MWh)",
     "storage_charge_MWh": "储能充电量(MWh)",
     "storage_discharge_MWh": "储能放电量(MWh)",
     "storage_recovered_MWh": "储能回收电量(MWh)",
@@ -178,6 +192,8 @@ FIELD_CN = {
     "rank": "排序",
     "recommendation_type": "推荐类型",
     "interpretation": "解释",
+    "required_daily_MWh": "日能量需求(MWh)",
+    "basis_role": "基准用途",
     "figure_file": "图片文件",
     "paper_use": "论文用途",
 }
@@ -186,6 +202,17 @@ VALUE_CN = {
     "discrete": "离散开停机",
     "continuous": "连续调节",
     "best_cost": "成本最优",
+    "minimax_daily_energy_LP": "日能量Minimax线性规划",
+    "minimax_daily_energy_fixed_ratio": "日能量Minimax固定风光比例",
+    "minimax_daily_energy_fixed_ratio_storage_loss_margin": "日能量Minimax固定比例含储能损耗裕度",
+    "minimax_hourly_LP_no_storage": "逐小时Minimax无储能线性规划",
+    "minimax_hourly_fixed_ratio_no_storage": "逐小时Minimax固定比例无储能",
+    "mathematical_lower_bound": "数学下界",
+    "storage_design_basis": "储能设计基准",
+    "strict_no_storage_boundary": "严格无储能边界",
+    "ALL_MINIMAX": "全部场景Minimax",
+    "minimax_robust_dispatch": "Minimax鲁棒调度",
+    "minimizes the worst-case daily ammonia shortfall across all 24 wind/PV scenarios": "最小化24个风光场景中的最坏日产氨缺口",
     "economic_min_incremental_cost": "经济型最低边际成本",
     "max_daily_NH3": "最大日产量",
     "max_curtailment_reduction": "最大弃电削减",
@@ -763,6 +790,7 @@ def create_figures(
     _fig_q4_heatmap(figures_dir / "q4_no_storage_production_heatmap.png", q4_rows, "daily_NH3_t")
     _fig_q4_heatmap(figures_dir / "q4_no_storage_curtailment_heatmap.png", q4_rows, "curtail_MWh")
     _fig_scan(figures_dir / "q4_storage_capacity_scan.png", scan_rows)
+    _fig_minimax_scan(figures_dir / "q4_minimax_storage_scan.png", scan_rows)
     _fig_storage_soc(figures_dir / "q4_storage_soc_max_curtailment.png", q4_storage_hourly)
     _fig_storage_improvement(figures_dir / "q4_storage_improvement_bar.png", q4_rows, q4_storage_rows)
     _fig_grid_cost_scatter(figures_dir / "q4_grid_vs_offgrid_unit_cost.png", q4_grid_vs)
@@ -789,6 +817,7 @@ def figure_index_rows():
         "q4_no_storage_production_heatmap.png",
         "q4_no_storage_curtailment_heatmap.png",
         "q4_storage_capacity_scan.png",
+        "q4_minimax_storage_scan.png",
         "q4_storage_soc_max_curtailment.png",
         "q4_storage_improvement_bar.png",
         "q4_grid_vs_offgrid_unit_cost.png",
@@ -1142,10 +1171,34 @@ def _fig_q4_heatmap(path, rows, key):
 
 def _fig_scan(path, rows):
     plt.figure(figsize=(6, 4))
-    plt.plot([r["E_cap_MWh"] for r in rows], [r["storage_unit_cost_yuan_per_t"] for r in rows], marker="o")
+    y_key = "storage_unit_cost_yuan_per_t"
+    plt.plot([r["E_cap_MWh"] for r in rows], [r[y_key] for r in rows], marker="o")
     plt.xlabel("储能容量(MWh)")
     plt.ylabel("储能单位成本(元/吨)")
     _savefig(path)
+
+
+def _fig_minimax_scan(path, rows):
+    if not rows:
+        _fig_placeholder(path, "无Minimax储能扫描数据")
+        return
+    e_caps = [float(r["E_cap_MWh"]) for r in rows]
+    shortfall = [float(r.get("worst_shortfall_t", 0.0)) for r in rows]
+    worst_nh3 = [float(r["daily_NH3_t"]) for r in rows]
+    fig, ax1 = plt.subplots(figsize=(7.5, 4.6))
+    ax1.plot(e_caps, shortfall, marker="o", color="#DC2626", label="最坏缺口")
+    ax1.set_xlabel("储能容量(MWh)")
+    ax1.set_ylabel("最坏场景缺口(吨/日)")
+    ax2 = ax1.twinx()
+    ax2.plot(e_caps, worst_nh3, marker="s", color="#2563EB", label="最坏日产氨量")
+    ax2.axhline(72.0, color="#111827", linestyle="--", linewidth=0.9, label="72吨/日目标")
+    ax2.set_ylabel("最坏场景日产氨量(吨)")
+    lines = ax1.get_lines() + ax2.get_lines()
+    labels = [line.get_label() for line in lines]
+    ax1.legend(lines, labels, loc="best")
+    fig.tight_layout()
+    plt.savefig(path, dpi=180)
+    plt.close()
 
 
 def _fig_storage_soc(path, rows):
@@ -1287,6 +1340,11 @@ def _method_label_cn(method):
     labels = {
         "LP_min_total_wind_pv_capacity": "最小总装机\n线性规划",
         "fixed_wind_pv_ratio_scale": "固定风光比例\n等比例放大",
+        "minimax_daily_energy_LP": "日能量Minimax\n线性规划",
+        "minimax_daily_energy_fixed_ratio": "日能量Minimax\n固定比例",
+        "minimax_daily_energy_fixed_ratio_storage_loss_margin": "日能量Minimax\n含损耗裕度",
+        "minimax_hourly_LP_no_storage": "逐小时Minimax\n无储能",
+        "minimax_hourly_fixed_ratio_no_storage": "逐小时Minimax\n固定比例",
     }
     return labels.get(method, str(method).replace("_", "\n"))
 

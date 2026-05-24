@@ -1,3 +1,6 @@
-﻿method,wind_MW,pv_MW,total_MW,scale_vs_current,note
-LP_min_total_wind_pv_capacity,1156.3056300268097,0.0,1156.3056300268097,11.1183233656424,minimize wind_MW + pv_MW while meeting base load plus full 72 t/d process load in all 24 scenarios
-fixed_wind_pv_ratio_scale,1156.3056300268097,1850.0890080428956,3006.3946380697053,28.907640750670243,keep 40:64 wind/PV ratio and scale until all hours and scenarios are self-sufficient
+﻿method,wind_MW,pv_MW,total_MW,scale_vs_current,required_daily_MWh,worst_case_scenario_id,basis_role,note
+minimax_daily_energy_LP,282.80254777070064,0.0,282.80254777070064,2.7192552670259675,1056.72,W2P1,mathematical_lower_bound,minimax daily-energy capacity: minimize wind_MW + pv_MW while meeting daily base load plus 72 t/d process energy in every scenario; storage is still needed for hourly mismatch
+minimax_daily_energy_fixed_ratio,248.72193193051828,397.95509108882925,646.6770230193475,6.218048298262957,1056.72,W2P4,storage_design_basis,minimax fixed-ratio capacity used as the Q4(2) storage design basis; W/P keeps the original 40:64 engineering mix and takes the worst scenario scale
+minimax_daily_energy_fixed_ratio_storage_loss_margin,307.064113494467,491.3025815911472,798.3666950856142,7.676602837361675,1056.72,W2P4,storage_design_basis,engineering storage-design basis: fixed-ratio minimax daily energy with round-trip storage-loss margin
+minimax_hourly_LP_no_storage,1156.3056300268097,0.0,1156.3056300268097,11.1183233656424,1056.72,,strict_no_storage_boundary,strict hourly no-storage lower boundary: every hour in every scenario must meet base load plus full 72 t/d process load
+minimax_hourly_fixed_ratio_no_storage,1156.3056300268097,1850.0890080428956,3006.3946380697053,28.907640750670243,1056.72,W2P1,strict_no_storage_boundary,strict hourly no-storage fixed-ratio boundary; much larger because PV has no night output

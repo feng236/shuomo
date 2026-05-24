@@ -43,8 +43,8 @@ hardSoft = [hard_soft_compare(q2, "discrete"); hard_soft_compare(q3, "continuous
 q2Annual = annual_summary_for_candidates(q2);
 q3Annual = annual_summary_for_candidates(q3);
 q4NoStorage = q4_no_storage_rows(data, scenarios, params);
-[q4Scan, q4WithStorage, q4StorageAnnual, q4GridVs, q4StorageHourly, q4StorageDesigns] = q4_derived_tables(data, scenarios, q4NoStorage, q3, params);
 q4MinCapacity = q4_min_capacity_rows(data, params);
+[q4Scan, q4WithStorage, q4StorageAnnual, q4GridVs, q4StorageHourly, q4StorageDesigns, q4MinimaxNoStorage] = q4_derived_tables(data, q4NoStorage, q4MinCapacity, q3, params);
 stochasticRows = stochastic_representative_rows(data, scenarios, params);
 storage2d = storage_2d_scan_rows(q4Scan);
 storageMarginal = storage_marginal_value_rows(q4Scan);
@@ -63,6 +63,7 @@ writetable(riskSummary, fullfile(tablesDir, "scenario_risk_summary.csv"));
 writetable(flexValue, fullfile(tablesDir, "flexible_load_value.csv"));
 writetable(hardSoft, fullfile(tablesDir, "hard_soft_compare.csv"));
 writetable(q4NoStorage, fullfile(tablesDir, "q4_offgrid_no_storage.csv"));
+writetable(q4MinimaxNoStorage, fullfile(tablesDir, "q4_minimax_expanded_no_storage.csv"));
 writetable(q4Scan, fullfile(tablesDir, "q4_storage_capacity_scan.csv"));
 writetable(q4WithStorage, fullfile(tablesDir, "q4_offgrid_with_storage.csv"));
 writetable(q4StorageHourly, fullfile(tablesDir, "q4_storage_hourly_dispatch.csv"));

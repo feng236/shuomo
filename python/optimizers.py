@@ -205,12 +205,21 @@ def estimate_min_capacity_hourly(base_load_mw, wind_pu, pv_pu, keep_ratio=False)
     req = base_load_mw + process_power_for_rate(3.0)
     if keep_ratio:
         scales = []
+        worst = None
         for wi in range(6):
             for pi in range(4):
                 current = CFG.wind_cap_mw * wind_pu[:, wi] + CFG.pv_cap_mw * pv_pu[:, pi]
-                scales.append(np.max(req / current))
+                scale = float(np.max(req / current))
+                scales.append(scale)
+                if worst is None or scale > worst[0]:
+                    worst = (scale, wi + 1, pi + 1)
         k = float(np.max(scales))
-        return {'wind_mw': CFG.wind_cap_mw * k, 'pv_mw': CFG.pv_cap_mw * k, 'scale': k}
+        return {
+            'wind_mw': CFG.wind_cap_mw * k,
+            'pv_mw': CFG.pv_cap_mw * k,
+            'scale': k,
+            'worst_case_scenario_id': f"W{worst[1]}P{worst[2]}" if worst else "",
+        }
     A, b = [], []
     for wi in range(6):
         for pi in range(4):
@@ -221,3 +230,49 @@ def estimate_min_capacity_hourly(base_load_mw, wind_pu, pv_pu, keep_ratio=False)
     if not res.success:
         raise RuntimeError(res.message)
     return {'wind_mw': float(res.x[0]), 'pv_mw': float(res.x[1]), 'sum_mw': float(res.fun)}
+
+def estimate_min_capacity_daily_energy(base_load_mw, wind_pu, pv_pu, keep_ratio=False):
+    req_daily = float(np.sum(base_load_mw) + process_power_for_rate(3.0) * 24.0)
+    wind_daily_pu = np.sum(wind_pu, axis=0)
+    pv_daily_pu = np.sum(pv_pu, axis=0)
+    if keep_ratio:
+        scales = []
+        worst = None
+        for wi in range(6):
+            for pi in range(4):
+                current = CFG.wind_cap_mw * wind_daily_pu[wi] + CFG.pv_cap_mw * pv_daily_pu[pi]
+                scale = float(req_daily / max(current, 1e-9))
+                scales.append(scale)
+                if worst is None or scale > worst[0]:
+                    worst = (scale, wi + 1, pi + 1)
+        k = float(np.max(scales))
+        return {
+            'wind_mw': CFG.wind_cap_mw * k,
+            'pv_mw': CFG.pv_cap_mw * k,
+            'scale': k,
+            'sum_mw': (CFG.wind_cap_mw + CFG.pv_cap_mw) * k,
+            'req_daily_mwh': req_daily,
+            'worst_case_scenario_id': f"W{worst[1]}P{worst[2]}" if worst else "",
+        }
+
+    A, b = [], []
+    for wi in range(6):
+        for pi in range(4):
+            A.append([-wind_daily_pu[wi], -pv_daily_pu[pi]])
+            b.append(-req_daily)
+    res = linprog(c=[1, 1], A_ub=np.array(A), b_ub=np.array(b), bounds=[(0, None), (0, None)], method='highs')
+    if not res.success:
+        raise RuntimeError(res.message)
+    slacks = []
+    for wi in range(6):
+        for pi in range(4):
+            supply = res.x[0] * wind_daily_pu[wi] + res.x[1] * pv_daily_pu[pi]
+            slacks.append((float(supply - req_daily), wi + 1, pi + 1))
+    worst = min(slacks, key=lambda x: x[0])
+    return {
+        'wind_mw': float(res.x[0]),
+        'pv_mw': float(res.x[1]),
+        'sum_mw': float(res.fun),
+        'req_daily_mwh': req_daily,
+        'worst_case_scenario_id': f"W{worst[1]}P{worst[2]}",
+    }

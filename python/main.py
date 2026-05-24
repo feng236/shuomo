@@ -17,7 +17,7 @@ from costs import (
 from data_loader import build_scenarios, load_all_attachments, typical_scenario
 from metrics import CLASS_ALL, CLASS_NONE, CLASS_PARTIAL, classify_metering, green_direct_metrics_metering, green_direct_metrics_statement
 from optimizers import solve_continuous_on_grid, solve_discrete_on_grid
-from optimizers import estimate_min_capacity_hourly, solve_offgrid_storage_dispatch
+from optimizers import estimate_min_capacity_daily_energy, estimate_min_capacity_hourly, solve_offgrid_storage_dispatch
 from reporting import (
     acceptance_report,
     annual_summary_for_paper,
@@ -263,11 +263,11 @@ def annual_summary_legacy(rows, mode, q_values):
     return out
 
 
-def q4_storage_optimized_tables(data, scenarios, q4_no_storage, q3_rows):
-    max_row = max(q4_no_storage, key=lambda r: r["curtail_MWh"])
-    scenario_by_id = {sc["id"]: sc for sc in scenarios}
-    worst_sc = scenario_by_id[max_row["scenario_id"]]
-    scan = q4_storage_capacity_scan_optimized(data, worst_sc)
+def q4_storage_optimized_tables(data, scenarios, q4_no_storage, q3_rows, q4_min_capacity):
+    capacity_basis = _q4_storage_capacity_basis(q4_min_capacity)
+    design_scenarios = _q4_scaled_scenarios(data, capacity_basis)
+    design_no_storage = q4_no_storage_rows(data, design_scenarios)
+    scan = q4_storage_capacity_scan_minimax(data, design_scenarios, design_no_storage, capacity_basis)
     feasible_scan = [
         r for r in scan
         if float(r["E_cap_MWh"]) > 0
@@ -278,15 +278,19 @@ def q4_storage_optimized_tables(data, scenarios, q4_no_storage, q3_rows):
         feasible_scan = [r for r in scan if np.isfinite(float(r["storage_unit_cost_yuan_per_t"]))]
     best_scan = min(
         feasible_scan,
-        key=lambda r: (float(r.get("incremental_storage_cost_yuan_per_added_t", np.inf)), -float(r["daily_NH3_t"])),
+        key=lambda r: (
+            float(r.get("worst_shortfall_t", np.inf)),
+            float(r.get("storage_daily_cost", np.inf)),
+            float(r.get("E_cap_MWh", np.inf)),
+        ),
     )
     e_cap = float(best_scan["E_cap_MWh"])
     p_cap = float(best_scan["P_cap_MW"])
 
     with_storage = []
     hourly = []
-    no_storage_by_id = {r["scenario_id"]: r for r in q4_no_storage}
-    for sc in scenarios:
+    no_storage_by_id = {r["scenario_id"]: r for r in design_no_storage}
+    for sc in design_scenarios:
         sol = solve_offgrid_storage_dispatch(data.base_load_mw, sc["renew_mw"], e_cap, p_cap)
         base = no_storage_by_id[sc["id"]]
         daily_nh3 = float(sol["daily_nh3_t"])
@@ -298,10 +302,14 @@ def q4_storage_optimized_tables(data, scenarios, q4_no_storage, q3_rows):
         total_daily_cost = storage_daily_cost + proc_daily_cost + re_daily_cost + annualized_nh3_capex_daily(72.0)
         with_storage.append({
             "scenario_id": sc["id"],
+            "capacity_basis_method": capacity_basis["method"],
+            "wind_cap_MW": capacity_basis["wind_MW"],
+            "pv_cap_MW": capacity_basis["pv_MW"],
             "E_cap_MWh": e_cap,
             "P_cap_MW": p_cap,
             "daily_NH3_t": daily_nh3,
             "avg_rate_tph": daily_nh3 / 24.0,
+            "shortfall_to_72_t": max(0.0, 72.0 - daily_nh3),
             "curtail_MWh": curtail,
             "unserved_base_MWh": unserved,
             "storage_charge_MWh": float(np.sum(sol["charge_mw"])),
@@ -316,6 +324,9 @@ def q4_storage_optimized_tables(data, scenarios, q4_no_storage, q3_rows):
         for h in range(24):
             hourly.append({
                 "scenario_id": sc["id"],
+                "capacity_basis_method": capacity_basis["method"],
+                "wind_cap_MW": capacity_basis["wind_MW"],
+                "pv_cap_MW": capacity_basis["pv_MW"],
                 "hour": h,
                 "time_label": data.times[h],
                 "P_base_MW": data.base_load_mw[h],
@@ -334,7 +345,10 @@ def q4_storage_optimized_tables(data, scenarios, q4_no_storage, q3_rows):
     annual = [{
         "E_cap_MWh": e_cap,
         "P_cap_MW": p_cap,
-        "design_scenario_id": max_row["scenario_id"],
+        "design_scenario_id": best_scan["design_scenario_id"],
+        "capacity_basis_method": capacity_basis["method"],
+        "wind_cap_MW": capacity_basis["wind_MW"],
+        "pv_cap_MW": capacity_basis["pv_MW"],
         "annual_days": len(with_storage) * 15,
         "annual_NH3_t": sum(r["daily_NH3_t"] for r in with_storage) * 15,
         "annual_total_cost": sum(r["daily_total_cost"] for r in with_storage) * 15,
@@ -342,6 +356,9 @@ def q4_storage_optimized_tables(data, scenarios, q4_no_storage, q3_rows):
             + sum(r["storage_charge_MWh"] * 1000 * CFG.storage_om_yuan_per_kwh for r in with_storage) * 15,
         "mean_delta_NH3_t": float(np.mean([r["delta_NH3_t"] for r in with_storage])),
         "mean_curtail_reduction_MWh": float(np.mean([r["curtail_reduction_MWh"] for r in with_storage])),
+        "worst_daily_NH3_t": float(min(r["daily_NH3_t"] for r in with_storage)),
+        "worst_shortfall_t": float(max(r["shortfall_to_72_t"] for r in with_storage)),
+        "worst_case_scenario_id": min(with_storage, key=lambda r: float(r["daily_NH3_t"]))["scenario_id"],
         "annual_average_unit_cost": (
             sum(r["daily_total_cost"] for r in with_storage) * 15
             / max(sum(r["daily_NH3_t"] for r in with_storage) * 15, 1e-9)
@@ -363,41 +380,71 @@ def q4_storage_optimized_tables(data, scenarios, q4_no_storage, q3_rows):
             "grid_connected_unit_cost": grid_cost,
             "grid_support_value": off_cost - grid_cost if not np.isnan(grid_cost) else np.nan,
         })
-    return scan, with_storage, annual, grid_vs, hourly
+    return scan, with_storage, annual, grid_vs, hourly, design_no_storage
 
 
-def q4_storage_capacity_scan_optimized(data, scenario):
-    no_storage = q4_no_storage_rows(data, [scenario])[0]
-    base_curtail = float(no_storage["curtail_MWh"])
-    if base_curtail <= 0:
-        candidates = [0.0]
-    else:
-        step = 10.0
-        candidates = list(np.arange(0.0, np.ceil(base_curtail / step) * step + step, step))
+def q4_storage_capacity_scan_minimax(data, scenarios, no_storage_rows, capacity_basis):
+    full_load_power = process_power_for_rate(3.0)
+    max_full_load_deficit = 0.0
+    for sc in scenarios:
+        full_load_deficit = np.maximum(data.base_load_mw + full_load_power - sc["renew_mw"], 0.0)
+        max_full_load_deficit = max(max_full_load_deficit, float(np.sum(full_load_deficit)))
+    step = 10.0
+    upper = max(10.0, np.ceil(max_full_load_deficit / step) * step + step)
+    candidates = list(np.arange(0.0, upper + 1e-9, step))
+    base_min_daily_nh3 = min(float(r["daily_NH3_t"]) for r in no_storage_rows)
+    base_mean_daily_nh3 = float(np.mean([float(r["daily_NH3_t"]) for r in no_storage_rows]))
+    base_curtail_by_id = {r["scenario_id"]: float(r["curtail_MWh"]) for r in no_storage_rows}
     rows = []
     for e_cap in candidates:
         p_cap = e_cap / 4.0 if e_cap > 0 else 0.0
-        sol = solve_offgrid_storage_dispatch(data.base_load_mw, scenario["renew_mw"], e_cap, p_cap)
-        charge = float(np.sum(sol["charge_mw"]))
-        daily_nh3 = float(sol["daily_nh3_t"])
-        cost = storage_capex_daily(e_cap) + charge * 1000 * CFG.storage_om_yuan_per_kwh
+        eval_rows = []
+        for sc in scenarios:
+            sol = solve_offgrid_storage_dispatch(data.base_load_mw, sc["renew_mw"], e_cap, p_cap)
+            daily_nh3 = float(sol["daily_nh3_t"])
+            curtail = float(np.sum(sol["curtail_mwh"]))
+            charge = float(np.sum(sol["charge_mw"]))
+            eval_rows.append({
+                "scenario_id": sc["id"],
+                "daily_NH3_t": daily_nh3,
+                "shortfall_to_72_t": max(0.0, 72.0 - daily_nh3),
+                "curtail_MWh": curtail,
+                "curtail_reduction_MWh": base_curtail_by_id.get(sc["id"], 0.0) - curtail,
+                "storage_charge_MWh": charge,
+                "storage_discharge_MWh": float(np.sum(sol["discharge_mw"])),
+                "max_SOC_MWh": float(np.max(sol["soc_mwh"])),
+                "unserved_base_MWh": float(np.sum(sol["deficit_mwh"])),
+            })
+        worst = min(eval_rows, key=lambda r: r["daily_NH3_t"])
+        mean_daily_nh3 = float(np.mean([r["daily_NH3_t"] for r in eval_rows]))
+        mean_charge = float(np.mean([r["storage_charge_MWh"] for r in eval_rows]))
+        cost = storage_capex_daily(e_cap) + mean_charge * 1000 * CFG.storage_om_yuan_per_kwh
+        worst_delta = float(worst["daily_NH3_t"] - base_min_daily_nh3)
         rows.append({
-            "design_scenario_id": scenario["id"],
+            "design_scenario_id": "ALL_MINIMAX",
+            "capacity_basis_method": capacity_basis["method"],
+            "wind_cap_MW": capacity_basis["wind_MW"],
+            "pv_cap_MW": capacity_basis["pv_MW"],
             "E_cap_MWh": float(e_cap),
             "P_cap_MW": float(p_cap),
             "duration_h": float(e_cap / p_cap) if p_cap > 0 else np.nan,
-            "daily_NH3_t": daily_nh3,
-            "delta_NH3_t": daily_nh3 - float(no_storage["daily_NH3_t"]),
-            "curtail_MWh": float(np.sum(sol["curtail_mwh"])),
-            "curtail_reduction_MWh": float(no_storage["curtail_MWh"]) - float(np.sum(sol["curtail_mwh"])),
-            "storage_charge_MWh": charge,
-            "storage_discharge_MWh": float(np.sum(sol["discharge_mw"])),
-            "max_SOC_MWh": float(np.max(sol["soc_mwh"])),
-            "unserved_base_MWh": float(np.sum(sol["deficit_mwh"])),
+            "daily_NH3_t": float(worst["daily_NH3_t"]),
+            "mean_daily_NH3_t": mean_daily_nh3,
+            "delta_NH3_t": worst_delta,
+            "mean_delta_NH3_t": mean_daily_nh3 - base_mean_daily_nh3,
+            "worst_shortfall_t": float(worst["shortfall_to_72_t"]),
+            "worst_case_scenario_id": worst["scenario_id"],
+            "curtail_MWh": float(max(r["curtail_MWh"] for r in eval_rows)),
+            "mean_curtail_MWh": float(np.mean([r["curtail_MWh"] for r in eval_rows])),
+            "curtail_reduction_MWh": float(np.mean([r["curtail_reduction_MWh"] for r in eval_rows])),
+            "storage_charge_MWh": float(np.mean([r["storage_charge_MWh"] for r in eval_rows])),
+            "storage_discharge_MWh": float(np.mean([r["storage_discharge_MWh"] for r in eval_rows])),
+            "max_SOC_MWh": float(max(r["max_SOC_MWh"] for r in eval_rows)),
+            "unserved_base_MWh": float(max(r["unserved_base_MWh"] for r in eval_rows)),
             "storage_daily_cost": float(cost),
-            "storage_unit_cost_yuan_per_t": float(cost / daily_nh3) if daily_nh3 > 0 else np.nan,
-            "incremental_storage_cost_yuan_per_added_t": float(cost / (daily_nh3 - float(no_storage["daily_NH3_t"])))
-                if daily_nh3 > float(no_storage["daily_NH3_t"]) + 1e-9 else np.nan,
+            "storage_unit_cost_yuan_per_t": float(cost / worst["daily_NH3_t"]) if worst["daily_NH3_t"] > 0 else np.nan,
+            "incremental_storage_cost_yuan_per_added_t": float(cost / worst_delta)
+                if worst_delta > 1e-9 else np.nan,
         })
     return rows
 
@@ -413,6 +460,11 @@ def q4_storage_design_recommendations(scan_rows):
         return []
 
     picks = [
+        ("minimax_robust_dispatch", min(positive, key=lambda r: (
+            float(r.get("worst_shortfall_t", np.inf)),
+            float(r["storage_daily_cost"]),
+            float(r["E_cap_MWh"]),
+        ))),
         ("economic_min_incremental_cost", min(positive, key=lambda r: float(r["incremental_storage_cost_yuan_per_added_t"]))),
         ("max_daily_NH3", max(positive, key=lambda r: float(r["daily_NH3_t"]))),
         ("max_curtailment_reduction", max(positive, key=lambda r: float(r["curtail_reduction_MWh"]))),
@@ -438,7 +490,10 @@ def q4_storage_design_recommendations(scan_rows):
             "P_cap_MW": r["P_cap_MW"],
             "duration_h": r["duration_h"],
             "daily_NH3_t": r["daily_NH3_t"],
+            "mean_daily_NH3_t": r.get("mean_daily_NH3_t", r["daily_NH3_t"]),
             "delta_NH3_t": r["delta_NH3_t"],
+            "worst_shortfall_t": r.get("worst_shortfall_t", np.nan),
+            "worst_case_scenario_id": r.get("worst_case_scenario_id", ""),
             "curtail_reduction_MWh": r["curtail_reduction_MWh"],
             "storage_daily_cost": r["storage_daily_cost"],
             "incremental_storage_cost_yuan_per_added_t": r["incremental_storage_cost_yuan_per_added_t"],
@@ -449,6 +504,7 @@ def q4_storage_design_recommendations(scan_rows):
 
 def _storage_recommendation_text(label):
     text = {
+        "minimax_robust_dispatch": "minimizes the worst-case daily ammonia shortfall across all 24 wind/PV scenarios",
         "economic_min_incremental_cost": "lowest marginal storage cost per added ton of ammonia; use as the cost-first design",
         "max_daily_NH3": "highest off-grid ammonia output in the scanned storage range",
         "max_curtailment_reduction": "largest renewable curtailment reduction in the scanned storage range",
@@ -458,26 +514,104 @@ def _storage_recommendation_text(label):
 
 
 def q4_min_capacity_rows(data):
-    unconstrained = estimate_min_capacity_hourly(data.base_load_mw, data.wind_scen_pu, data.pv_scen_pu, keep_ratio=False)
-    proportional = estimate_min_capacity_hourly(data.base_load_mw, data.wind_scen_pu, data.pv_scen_pu, keep_ratio=True)
+    daily_unconstrained = estimate_min_capacity_daily_energy(data.base_load_mw, data.wind_scen_pu, data.pv_scen_pu, keep_ratio=False)
+    daily_proportional = estimate_min_capacity_daily_energy(data.base_load_mw, data.wind_scen_pu, data.pv_scen_pu, keep_ratio=True)
+    eta_rt = CFG.storage_eta_ch * CFG.storage_eta_dis
+    daily_proportional_loss_margin = {
+        "wind_mw": daily_proportional["wind_mw"] / eta_rt,
+        "pv_mw": daily_proportional["pv_mw"] / eta_rt,
+        "scale": daily_proportional["scale"] / eta_rt,
+        "req_daily_mwh": daily_proportional["req_daily_mwh"],
+        "worst_case_scenario_id": daily_proportional["worst_case_scenario_id"],
+    }
+    hourly_unconstrained = estimate_min_capacity_hourly(data.base_load_mw, data.wind_scen_pu, data.pv_scen_pu, keep_ratio=False)
+    hourly_proportional = estimate_min_capacity_hourly(data.base_load_mw, data.wind_scen_pu, data.pv_scen_pu, keep_ratio=True)
     return [
         {
-            "method": "LP_min_total_wind_pv_capacity",
-            "wind_MW": unconstrained["wind_mw"],
-            "pv_MW": unconstrained["pv_mw"],
-            "total_MW": unconstrained["sum_mw"],
-            "scale_vs_current": unconstrained["sum_mw"] / (CFG.wind_cap_mw + CFG.pv_cap_mw),
-            "note": "minimize wind_MW + pv_MW while meeting base load plus full 72 t/d process load in all 24 scenarios",
+            "method": "minimax_daily_energy_LP",
+            "wind_MW": daily_unconstrained["wind_mw"],
+            "pv_MW": daily_unconstrained["pv_mw"],
+            "total_MW": daily_unconstrained["sum_mw"],
+            "scale_vs_current": daily_unconstrained["sum_mw"] / (CFG.wind_cap_mw + CFG.pv_cap_mw),
+            "required_daily_MWh": daily_unconstrained["req_daily_mwh"],
+            "worst_case_scenario_id": daily_unconstrained["worst_case_scenario_id"],
+            "basis_role": "mathematical_lower_bound",
+            "note": "minimax daily-energy capacity: minimize wind_MW + pv_MW while meeting daily base load plus 72 t/d process energy in every scenario; storage is still needed for hourly mismatch",
         },
         {
-            "method": "fixed_wind_pv_ratio_scale",
-            "wind_MW": proportional["wind_mw"],
-            "pv_MW": proportional["pv_mw"],
-            "total_MW": proportional["wind_mw"] + proportional["pv_mw"],
-            "scale_vs_current": proportional["scale"],
-            "note": "keep 40:64 wind/PV ratio and scale until all hours and scenarios are self-sufficient",
+            "method": "minimax_daily_energy_fixed_ratio",
+            "wind_MW": daily_proportional["wind_mw"],
+            "pv_MW": daily_proportional["pv_mw"],
+            "total_MW": daily_proportional["wind_mw"] + daily_proportional["pv_mw"],
+            "scale_vs_current": daily_proportional["scale"],
+            "required_daily_MWh": daily_proportional["req_daily_mwh"],
+            "worst_case_scenario_id": daily_proportional["worst_case_scenario_id"],
+            "basis_role": "storage_design_basis",
+            "note": "minimax fixed-ratio capacity used as the Q4(2) storage design basis; W/P keeps the original 40:64 engineering mix and takes the worst scenario scale",
+        },
+        {
+            "method": "minimax_daily_energy_fixed_ratio_storage_loss_margin",
+            "wind_MW": daily_proportional_loss_margin["wind_mw"],
+            "pv_MW": daily_proportional_loss_margin["pv_mw"],
+            "total_MW": daily_proportional_loss_margin["wind_mw"] + daily_proportional_loss_margin["pv_mw"],
+            "scale_vs_current": daily_proportional_loss_margin["scale"],
+            "required_daily_MWh": daily_proportional_loss_margin["req_daily_mwh"],
+            "worst_case_scenario_id": daily_proportional_loss_margin["worst_case_scenario_id"],
+            "basis_role": "storage_design_basis",
+            "note": "engineering storage-design basis: fixed-ratio minimax daily energy with round-trip storage-loss margin",
+        },
+        {
+            "method": "minimax_hourly_LP_no_storage",
+            "wind_MW": hourly_unconstrained["wind_mw"],
+            "pv_MW": hourly_unconstrained["pv_mw"],
+            "total_MW": hourly_unconstrained["sum_mw"],
+            "scale_vs_current": hourly_unconstrained["sum_mw"] / (CFG.wind_cap_mw + CFG.pv_cap_mw),
+            "required_daily_MWh": daily_unconstrained["req_daily_mwh"],
+            "worst_case_scenario_id": "",
+            "basis_role": "strict_no_storage_boundary",
+            "note": "strict hourly no-storage lower boundary: every hour in every scenario must meet base load plus full 72 t/d process load",
+        },
+        {
+            "method": "minimax_hourly_fixed_ratio_no_storage",
+            "wind_MW": hourly_proportional["wind_mw"],
+            "pv_MW": hourly_proportional["pv_mw"],
+            "total_MW": hourly_proportional["wind_mw"] + hourly_proportional["pv_mw"],
+            "scale_vs_current": hourly_proportional["scale"],
+            "required_daily_MWh": daily_proportional["req_daily_mwh"],
+            "worst_case_scenario_id": hourly_proportional.get("worst_case_scenario_id", ""),
+            "basis_role": "strict_no_storage_boundary",
+            "note": "strict hourly no-storage fixed-ratio boundary; much larger because PV has no night output",
         },
     ]
+
+
+def _q4_storage_capacity_basis(q4_min_capacity):
+    for row in q4_min_capacity:
+        if row.get("method") == "minimax_daily_energy_fixed_ratio_storage_loss_margin":
+            return row
+    for row in q4_min_capacity:
+        if row.get("basis_role") == "storage_design_basis":
+            return row
+    return q4_min_capacity[0]
+
+
+def _q4_scaled_scenarios(data, capacity_basis):
+    wind_cap = float(capacity_basis["wind_MW"])
+    pv_cap = float(capacity_basis["pv_MW"])
+    scenarios = []
+    for wi in range(6):
+        for pi in range(4):
+            wind = wind_cap * data.wind_scen_pu[:, wi]
+            pv = pv_cap * data.pv_scen_pu[:, pi]
+            scenarios.append({
+                "id": f"W{wi + 1}P{pi + 1}",
+                "wind_id": wi + 1,
+                "pv_id": pi + 1,
+                "wind_mw": wind,
+                "pv_mw": pv,
+                "renew_mw": wind + pv,
+            })
+    return scenarios
 
 
 def stochastic_representative_rows(data):
@@ -538,14 +672,15 @@ def run(data_dir, out_dir):
     q3_annual = annual_summary_for_paper(q3_rows)
     q3_vs_q2 = compare_q2_q3(q2_rows, q3_rows)
     q4_no_storage = q4_no_storage_rows(data, scenarios)
-    q4_scan, q4_with_storage, q4_storage_annual, q4_grid_vs, q4_storage_hourly = q4_storage_optimized_tables(
+    q4_min_capacity = q4_min_capacity_rows(data)
+    q4_scan, q4_with_storage, q4_storage_annual, q4_grid_vs, q4_storage_hourly, q4_expanded_no_storage = q4_storage_optimized_tables(
         data,
         scenarios,
         q4_no_storage,
         q3_rows,
+        q4_min_capacity,
     )
     q4_storage_recommendations = q4_storage_design_recommendations(q4_scan)
-    q4_min_capacity = q4_min_capacity_rows(data)
     stochastic_rows = stochastic_representative_rows(data)
     policy_margin = policy_margin_rows(q2_rows, "discrete") + policy_margin_rows(q3_rows, "continuous")
     scenario_risk = scenario_risk_summary_rows(q2_rows, "discrete") + scenario_risk_summary_rows(q3_rows, "continuous")
@@ -569,6 +704,7 @@ def run(data_dir, out_dir):
         "q3_annual_summary.csv": q3_annual,
         "q3_compare_q2.csv": q3_vs_q2,
         "q4_offgrid_no_storage.csv": q4_no_storage,
+        "q4_minimax_expanded_no_storage.csv": q4_expanded_no_storage,
         "q4_storage_capacity_scan.csv": q4_scan,
         "q4_offgrid_with_storage.csv": q4_with_storage,
         "q4_storage_hourly_dispatch.csv": q4_storage_hourly,
@@ -614,6 +750,7 @@ def run(data_dir, out_dir):
             "q3_annual": q3_annual,
             "q3_vs_q2": q3_vs_q2,
             "q4_no_storage": q4_no_storage,
+            "q4_minimax_expanded_no_storage": q4_expanded_no_storage,
             "q4_storage": q4_with_storage,
             "q4_storage_hourly": q4_storage_hourly,
             "q4_storage_designs": q4_storage_recommendations,

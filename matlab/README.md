@@ -26,6 +26,7 @@ main("D:/qq file/A题/A题", "outputs")
 - `outputs/tables/flexible_load_value.csv`
 - `outputs/tables/hard_soft_compare.csv`
 - `outputs/tables/q4_offgrid_no_storage.csv`
+- `outputs/tables/q4_minimax_expanded_no_storage.csv`
 - `outputs/tables/q4_storage_capacity_scan.csv`
 - `outputs/tables/q4_offgrid_with_storage.csv`
 - `outputs/tables/q4_storage_hourly_dispatch.csv`
@@ -69,6 +70,7 @@ main("D:/qq file/A题/A题", "outputs")
 | 硬/软合规比较 | `hard_soft_compare.csv` |
 | 柔性制氢虚拟储能价值 | `flexible_load_value.csv`, `fig_06_flexible_load_value.png` |
 | 多场景风险与 CVaR | `scenario_risk_summary.csv` |
+| 第四问 minimax 扩容与储能鲁棒配置 | `q4_minimum_capacity.csv`, `q4_storage_design_recommendations.csv` |
 | 离网储能容量扫描与小时调度 | `q4_storage_capacity_scan.csv`, `q4_storage_hourly_dispatch.csv`, `q4_storage_soc_max_curtailment.png` |
 | 储能多准则设计建议 | `q4_storage_design_recommendations.csv` |
 | 离网最小风光装机 | `q4_minimum_capacity.csv`, `q4_minimum_capacity.png` |
@@ -79,4 +81,4 @@ main("D:/qq file/A题/A题", "outputs")
 | 联网/离网支撑价值 | `grid_support_value.csv`, `fig_09_grid_vs_offgrid_cost.png` |
 | Pareto/TOPSIS 推荐 | `topsis_candidates.csv`, `fig_10_pareto_cost_compliance.png`, `fig_11_topsis_radar.png` |
 
-MATLAB 版已经覆盖论文创新功能，可由 MATLAB 环境独立运行生成核心表格和图件。Python 版保留更严格的 MILP 求解主线；MATLAB 版采用可移植的源随荷储能调度复核口径，两者可互相校验。
+MATLAB 版已经覆盖论文创新功能，可由 MATLAB 环境独立运行生成核心表格和图件。Python 版保留更严格的 MILP 求解主线；MATLAB 版采用可移植的源随荷储能调度复核口径，并同步第四问 minimax 扩容基准，两者可互相校验。

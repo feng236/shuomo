@@ -1,3 +1,6 @@
-﻿方法,wind_MW,pv_MW,total_MW,scale_vs_current,备注
-LP_min_total_wind_pv_capacity,1156.3056300268097,0.0,1156.3056300268097,11.1183233656424,minimize wind_MW + pv_MW while meeting base load plus full 72 t/d process load in all 24 scenarios
-fixed_wind_pv_ratio_scale,1156.3056300268097,1850.0890080428956,3006.3946380697053,28.907640750670243,keep 40:64 wind/PV ratio and scale until all hours and scenarios are self-sufficient
+﻿方法,风电装机(MW),光伏装机(MW),总装机(MW),相对现有装机倍数,日能量需求(MWh),最坏场景编号,基准用途,备注
+日能量Minimax线性规划,282.80254777070064,0.0,282.80254777070064,2.7192552670259675,1056.72,W2P1,数学下界,minimax daily-energy capacity: minimize wind_MW + pv_MW while meeting daily base load plus 72 t/d process energy in every scenario; storage is still needed for hourly mismatch
+日能量Minimax固定风光比例,248.72193193051828,397.95509108882925,646.6770230193475,6.218048298262957,1056.72,W2P4,储能设计基准,minimax fixed-ratio capacity used as the Q4(2) storage design basis; W/P keeps the original 40:64 engineering mix and takes the worst scenario scale
+日能量Minimax固定比例含储能损耗裕度,307.064113494467,491.3025815911472,798.3666950856142,7.676602837361675,1056.72,W2P4,储能设计基准,engineering storage-design basis: fixed-ratio minimax daily energy with round-trip storage-loss margin
+逐小时Minimax无储能线性规划,1156.3056300268097,0.0,1156.3056300268097,11.1183233656424,1056.72,,严格无储能边界,strict hourly no-storage lower boundary: every hour in every scenario must meet base load plus full 72 t/d process load
+逐小时Minimax固定比例无储能,1156.3056300268097,1850.0890080428956,3006.3946380697053,28.907640750670243,1056.72,W2P1,严格无储能边界,strict hourly no-storage fixed-ratio boundary; much larger because PV has no night output
